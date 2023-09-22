@@ -10,8 +10,8 @@
     "make": "electron-forge make",
     "publish": "electron-forge publish",
     "lint": "eslint --ext .ts,.tsx .",
-    "build": "electron-builder build --mac --publish never",
-    "deploy": "electron-builder build --mac --publish never"
+    "build": "electron-builder build --mac --win --linux --publish never",
+    "deploy": "electron-builder build --mac --win --linux --publish never"
   },
   "build": {
     "appId": "memex-local-sync",
@@ -37,10 +37,20 @@
       ]
     },
     "win": {
-      "icon": "src/img/memex-logo.png"
+      "icon": "src/img/memex-logo.png",
+      "target": "nsis"
     },
     "linux": {
-      "icon": "src/img/memex-logo.png"
+      "icon": "src/img/memex-logo.png",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
     },
     "extraResources": [
       "src/img/tray_icon.png"

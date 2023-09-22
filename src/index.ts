@@ -199,10 +199,11 @@ app.on("before-quit", async (event) => {
 });
 
 app.on("quit", async () => {
+  await tray.destroy();
   if (server) {
     await stopExpress();
   }
-  tray.destroy();
+  app.quit();
 });
 
 app.on("ready", async () => {
@@ -256,6 +257,7 @@ app.on("ready", async () => {
     {
       label: "Exit",
       click: () => {
+        console.log("exit clicked");
         app.quit();
       },
     },
