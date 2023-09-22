@@ -1,7 +1,7 @@
 {
   "name": "memex-local-sync",
   "productName": "Memex Local Sync Helper",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Backup and sync to your favorite PKM tools",
   "main": ".webpack/main",
   "scripts": {
