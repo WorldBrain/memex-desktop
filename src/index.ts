@@ -327,6 +327,7 @@ function isPathComponentValid(component) {
 
 expressApp.post("/set-directory", async (req, res) => {
   if (!checkSyncKey(req.body.syncKey)) {
+    res.status(404);
     return;
   }
   let directoryPath;
@@ -354,6 +355,7 @@ expressApp.post("/set-directory", async (req, res) => {
 
 expressApp.put("/update-file", async (req, res) => {
   if (!checkSyncKey(req.body.syncKey)) {
+    res.status(404);
     return;
   }
   try {
@@ -392,6 +394,7 @@ expressApp.put("/update-file", async (req, res) => {
 
 expressApp.post("/get-file-content", async (req, res) => {
   if (!checkSyncKey(req.body.syncKey)) {
+    res.status(404);
     return;
   }
   try {
@@ -435,6 +438,7 @@ expressApp.get("/status", (req, res) => {
 
 expressApp.post("/pick-directory", (req, res) => {
   if (!checkSyncKey(req.body.syncKey)) {
+    res.status(404);
     return;
   }
   try {
@@ -452,15 +456,23 @@ expressApp.post("/pick-directory", (req, res) => {
 });
 
 // get the backup folder location
-expressApp.get("/backup/location", (req, res) => {
+expressApp.get("/backup/location", async (req, res) => {
   if (!checkSyncKey(req.body.syncKey)) {
-    return;
+    console.log("nokey");
+    res.status(500);
+  } else {
+    let backupPath = store.get("backupPath");
+    if (!backupPath) {
+      backupPath = await pickDirectory("backup");
+    }
+    store.set("backup", backupPath);
+    res.status(200).send(backupPath);
   }
-  res.status(200).send(backupPath);
 });
 
 expressApp.get("/backup/start-change-location", async (req, res) => {
   if (!checkSyncKey(req.body.syncKey)) {
+    res.status(404);
     return;
   }
   res.status(200).send(await pickDirectory("backup"));
@@ -469,6 +481,7 @@ expressApp.get("/backup/start-change-location", async (req, res) => {
 // listing files
 expressApp.get("/backup/:collection", (req, res) => {
   if (!checkSyncKey(req.body.syncKey)) {
+    res.status(404);
     return;
   }
   const collection = res.params.collection;
@@ -495,6 +508,7 @@ expressApp.get("/backup/:collection", (req, res) => {
 // getting files
 expressApp.get("/backup/:collection/:timestamp", (req, res) => {
   if (!checkSyncKey(req.body.syncKey)) {
+    res.status(404);
     return;
   }
   const filename = req.params.timestamp;
@@ -520,6 +534,7 @@ expressApp.get("/backup/:collection/:timestamp", (req, res) => {
 
 expressApp.put("/backup/:collection/:timestamp", async (req, res) => {
   if (!checkSyncKey(req.body.syncKey)) {
+    res.status(500);
     return;
   }
   const filename = req.params.timestamp;
@@ -532,7 +547,9 @@ expressApp.put("/backup/:collection/:timestamp", async (req, res) => {
     return res.status(400).send("Malformed collection parameter");
   }
 
-  const dirpath = backupPath + `/backup/${collection}`;
+  console.log("req.body", backupPath, req.body.backup);
+
+  const dirpath = req.body.backupPath + `/backup/${collection}`;
   try {
     await mkdirp(dirpath);
   } catch (err) {
