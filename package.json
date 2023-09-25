@@ -15,8 +15,9 @@
   },
   "build": {
     "appId": "memex-local-sync",
-    "productName": "Memex Local Sync Helper",
+    "productName": "Memex-Local-Sync-Helper",
     "copyright": "Copyright (c) 2023 Memex.Garden",
+    "artifactName": "${productName}.${ext}",
     "publish": [
       {
         "provider": "github",
