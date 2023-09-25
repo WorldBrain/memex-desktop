@@ -1,6 +1,7 @@
 import express from "express";
 import { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage } from "electron";
 import { autoUpdater } from "electron-updater";
+import * as Sentry from "@sentry/electron";
 
 import { dialog } from "electron";
 import Store from "electron-store";
@@ -208,8 +209,11 @@ app.on("quit", async () => {
 });
 
 app.on("ready", async () => {
+  Sentry.init({
+    dsn:
+      "https://483439a25c8581d861ccef9348c34bfe@o138129.ingest.sentry.io/4505941961342976",
+  });
   startExpress(); // Start Express server first
-
   log.catchErrors();
 
   try {
