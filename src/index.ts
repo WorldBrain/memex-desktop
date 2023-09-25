@@ -1,23 +1,22 @@
 import express from "express";
 import { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage } from "electron";
+import { autoUpdater } from "electron-updater";
 
 import { dialog } from "electron";
 import Store from "electron-store";
 import crypto from "crypto";
+const log = require("electron-log");
+require("dotenv").config();
+const settings = require("electron-settings");
 
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY; // Must be 256 bits (32 characters)
 const IV_LENGTH = 16; // For AES, this is always 16
 
-require("dotenv").config();
-
 const store = new Store();
 
-const settings = require("electron-settings");
 var fs = require("fs");
 var mkdirp = require("mkdirp");
 var path = require("path");
-
-const { autoUpdater } = require("electron-updater");
 
 let tray: Tray = null;
 
@@ -63,6 +62,7 @@ const startExpress = (): void => {
   if (!server || !server.listening) {
     server = expressApp.listen(EXPRESS_PORT, () => {
       console.log(`Express server started on http://localhost:${EXPRESS_PORT}`);
+      console.error("testtesttestest");
     });
     server.keepAliveTimeout = 30000;
   } else {
@@ -184,6 +184,7 @@ const createWindow = (): void => {
 let isQuitting = false;
 app.on("before-quit", async (event) => {
   if (!isQuitting) {
+    console.log("is about to quit");
     event.preventDefault(); // Prevent the default quit
     await stopExpress()
       .then(() => {
@@ -208,6 +209,14 @@ app.on("quit", async () => {
 
 app.on("ready", async () => {
   startExpress(); // Start Express server first
+
+  log.catchErrors();
+
+  try {
+    throw new Error("Something went wrong");
+  } catch (err) {
+    log.error(err);
+  }
 
   let trayIconPath;
 
@@ -269,32 +278,34 @@ app.on("ready", async () => {
   // Optional: Add a tooltip to the Tray
   tray.setToolTip("Memex Local Sync Helper");
   try {
-    autoUpdater.checkForUpdatesAndNotify();
-
-    autoUpdater.on("update-available", () => {
-      autoUpdater.downloadUpdate();
+    autoUpdater
+      .checkForUpdates()
+      .then((result) => {
+        log.info("result", result);
+      })
+      .catch((err) => {
+        log.error("err", err);
+      });
+    autoUpdater
+      .checkForUpdatesAndNotify()
+      .then((result) => {
+        log.info("result2", result);
+      })
+      .catch((err) => {
+        log.error("err", err);
+      });
+    autoUpdater.on("update-available", async () => {
+      log.info("update available");
+      log.info(autoUpdater.downloadUpdate());
     });
 
     autoUpdater.on("update-downloaded", () => {
+      log.info("update downloaded");
       autoUpdater.quitAndInstall();
     });
   } catch (error) {
     console.log("error", error);
   }
-  autoUpdater.on("update-available", () => {
-    updateMenuItem.label = "Download Update";
-    updateMenuItem.click = () => {
-      autoUpdater.downloadUpdate();
-    };
-    tray.setContextMenu(contextMenu);
-  });
-  autoUpdater.on("update-downloaded", () => {
-    updateMenuItem.label = "Install and Restart";
-    updateMenuItem.click = () => {
-      autoUpdater.quitAndInstall();
-    };
-    tray.setContextMenu(contextMenu);
-  });
 });
 
 app.on("window-all-closed", () => {
@@ -546,8 +557,6 @@ expressApp.put("/backup/:collection/:timestamp", async (req, res) => {
   if (!isPathComponentValid(collection)) {
     return res.status(400).send("Malformed collection parameter");
   }
-
-  console.log("req.body", backupPath, req.body.backup);
 
   const dirpath = req.body.backupPath + `/backup/${collection}`;
   try {

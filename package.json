@@ -10,8 +10,8 @@
     "make": "electron-forge make",
     "publish": "electron-forge publish",
     "lint": "eslint --ext .ts,.tsx .",
-    "build": "electron-builder build --mac --win --linux --publish never",
-    "deploy": "electron-builder build --mac --win --linux --publish never"
+    "build": "electron-builder build --mac --linux --win --publish never",
+    "deploy": "electron-builder build --mac --linux --win --publish never"
   },
   "build": {
     "appId": "memex-local-sync",
@@ -29,10 +29,11 @@
       "target": [
         {
           "target": "zip",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
+          "arch": "arm64"
+        },
+        {
+          "target": "dmg",
+          "arch": "arm64"
         }
       ]
     },
@@ -93,6 +94,7 @@
     "copy-webpack-plugin": "^11.0.0",
     "dotenv": "^16.3.1",
     "dotenv-webpack": "^8.0.1",
+    "electron-log": "^4.4.8",
     "electron-settings": "^4.0.2",
     "electron-squirrel-startup": "^1.0.0",
     "electron-store": "^8.1.0",
