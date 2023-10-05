@@ -69,6 +69,7 @@ let server: ReturnType<typeof expressApp.listen> | null = null;
 const startExpress = (): void => {
   if (!server || !server.listening) {
     server = expressApp.listen(EXPRESS_PORT, () => {
+      log.info(`Express server started on http://localhost:${EXPRESS_PORT}`);
       console.log(`Express server started on http://localhost:${EXPRESS_PORT}`);
     });
     server.keepAliveTimeout = 300000000000000000;
@@ -194,30 +195,13 @@ const createWindow = (): void => {
   mainWindow.webContents.openDevTools();
 };
 
-let isQuitting = false;
 app.on("before-quit", async (event) => {
-  if (!isQuitting) {
-    console.log("is about to quit");
-    event.preventDefault(); // Prevent the default quit
-    await stopExpress()
-      .then(() => {
-        isQuitting = true;
-        app.quit();
-      })
-      .catch((err) => {
-        log.error("Error during app shutdown:", err);
-        isQuitting = true;
-        app.quit();
-      });
-  }
-});
-
-app.on("quit", async () => {
-  await tray.destroy();
+  log.info("before-quit");
+  tray.destroy();
   if (server) {
+    log.info("Stopping Express server as parto of quit process");
     await stopExpress();
   }
-  app.quit();
 });
 
 app.on("ready", async () => {
@@ -273,8 +257,9 @@ app.on("ready", async () => {
       {
         label: "Exit",
         click: () => {
-          console.log("exit clicked");
+          console.log("exit clicked before");
           app.quit();
+          console.log("exit clicked");
         },
       },
     ]);
@@ -307,16 +292,6 @@ app.on("ready", async () => {
     log.error("error", error);
     app.quit();
   }
-});
-
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
-});
-
-app.on("will-quit", () => {
-  tray.destroy();
 });
 
 app.on("activate", () => {
@@ -354,14 +329,17 @@ expressApp.post("/set-directory", async (req, res) => {
     if (directoryPath) {
       store.set(pkmSyncType, directoryPath);
       res.status(200).send(directoryPath);
+      return path;
     } else {
       res.status(400).json({ error: "No directory selected" });
+      return null;
     }
   } catch (error) {
     log.error("Error in /set-directory:", error);
     res.status(500).json({
       error: "Internal server error",
     });
+    return null;
   }
 });
 
