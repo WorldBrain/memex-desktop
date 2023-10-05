@@ -45,6 +45,14 @@ const expressApp = express();
 expressApp.use(express.json({ limit: "50mb" })); // adjust the limit as required
 expressApp.use(express.urlencoded({ extended: true, limit: "50mb" })); // adjust the limit as required
 
+process.on("uncaughtException", (err) => {
+  log.error("There was an uncaught error", err);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  log.error("Unhandled Rejection at:", promise, "reason:", reason);
+});
+
 // Example route 1: Simple Hello World
 expressApp.get("/hello", (req, res) => {
   res.send("Hello World from Electron's Express server!");
@@ -62,9 +70,14 @@ const startExpress = (): void => {
   if (!server || !server.listening) {
     server = expressApp.listen(EXPRESS_PORT, () => {
       console.log(`Express server started on http://localhost:${EXPRESS_PORT}`);
-      console.error("testtesttestest");
     });
-    server.keepAliveTimeout = 30000;
+    server.keepAliveTimeout = 300000000000000000;
+    server.timeout = 0;
+
+    server.on("close", () => {
+      console.log("Express server has shut down");
+      log.info("Express server has shut down");
+    });
   } else {
     console.log(
       `Express server is already running on http://localhost:${EXPRESS_PORT}`
@@ -123,7 +136,7 @@ const stopExpress = (): Promise<void> => {
     if (server) {
       server.close((err) => {
         if (err) {
-          console.error("Error stopping Express server:", err);
+          log.error("Error stopping Express server:", err);
           reject(err);
         } else {
           console.log("Express server stopped.");
@@ -162,7 +175,7 @@ const pickDirectory = (type: "backup" | "obsidian" | "logseq") => {
         "An error occurred while selecting the directory. Please try again."
       );
     }
-    console.error(error);
+    log.error(error);
   }
   return null;
 };
@@ -192,7 +205,7 @@ app.on("before-quit", async (event) => {
         app.quit();
       })
       .catch((err) => {
-        console.error("Error during app shutdown:", err);
+        log.error("Error during app shutdown:", err);
         isQuitting = true;
         app.quit();
       });
@@ -208,103 +221,91 @@ app.on("quit", async () => {
 });
 
 app.on("ready", async () => {
-  startExpress(); // Start Express server first
-
-  log.catchErrors();
-
   try {
-    throw new Error("Something went wrong");
-  } catch (err) {
-    log.error(err);
-  }
+    startExpress(); // Start Express server first
 
-  let trayIconPath;
+    log.catchErrors();
+    let trayIconPath;
 
-  if (process.env.NODE_ENV === "development") {
-    trayIconPath = path.join(__dirname, "/img/tray_icon.png");
-  } else {
-    trayIconPath = path.join(process.resourcesPath, "img", "tray_icon.png");
-  }
-  const trayIcon = nativeImage.createFromPath(trayIconPath);
+    if (process.env.NODE_ENV === "development") {
+      trayIconPath = path.join(__dirname, "/img/tray_icon.png");
+    } else {
+      trayIconPath = path.join(process.resourcesPath, "img", "tray_icon.png");
+    }
+    const trayIcon = nativeImage.createFromPath(trayIconPath);
 
-  if (!fs.existsSync(trayIconPath)) {
-    console.error("Tray icon not found:", trayIconPath);
-    return;
-  }
+    if (!fs.existsSync(trayIconPath)) {
+      log.error("Tray icon not found:", trayIconPath);
+      return;
+    }
 
-  tray = new Tray(trayIcon);
-  tray.setImage(trayIcon);
+    tray = new Tray(trayIcon);
+    tray.setImage(trayIcon);
 
-  let updateMenuItem: Electron.MenuItemConstructorOptions = {
-    label: "Check for Updates",
-    click: () => {
-      autoUpdater.checkForUpdates();
-    },
-  };
-
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: `Memex Local Sync - v${app.getVersion()}`,
-      enabled: false, // This makes the menu item non-clickable
-    },
-    {
-      label: "Start on Startup",
-      type: "checkbox",
-      checked: app.getLoginItemSettings().openAtLogin, // Check if the app is set to start on login
-      click: (item) => {
-        const startOnStartup = item.checked;
-        app.setLoginItemSettings({ openAtLogin: startOnStartup });
-      },
-    },
-    {
-      label: "Refresh Sync Key",
+    let updateMenuItem: Electron.MenuItemConstructorOptions = {
+      label: "Check for Updates",
       click: () => {
-        store.delete("syncKey");
+        autoUpdater.checkForUpdates();
       },
-    },
-    updateMenuItem,
-    {
-      label: "Exit",
-      click: () => {
-        console.log("exit clicked");
-        app.quit();
+    };
+
+    const contextMenu = Menu.buildFromTemplate([
+      {
+        label: `Memex Local Sync - v${app.getVersion()}`,
+        enabled: false, // This makes the menu item non-clickable
       },
-    },
-  ]);
+      {
+        label: "Start on Startup",
+        type: "checkbox",
+        checked: app.getLoginItemSettings().openAtLogin, // Check if the app is set to start on login
+        click: (item) => {
+          const startOnStartup = item.checked;
+          app.setLoginItemSettings({ openAtLogin: startOnStartup });
+        },
+      },
+      {
+        label: "Refresh Sync Key",
+        click: () => {
+          store.delete("syncKey");
+        },
+      },
+      updateMenuItem,
+      {
+        label: "Exit",
+        click: () => {
+          console.log("exit clicked");
+          app.quit();
+        },
+      },
+    ]);
 
-  // Set the context menu to the Tray
-  tray.setContextMenu(contextMenu);
+    // Set the context menu to the Tray
+    tray.setContextMenu(contextMenu);
 
-  // Optional: Add a tooltip to the Tray
-  tray.setToolTip("Memex Local Sync Helper");
-  try {
-    autoUpdater
-      .checkForUpdates()
-      .then((result) => {
-        log.info("result", result);
-      })
-      .catch((err) => {
-        log.error("err", err);
+    // Optional: Add a tooltip to the Tray
+    tray.setToolTip("Memex Local Sync Helper");
+    try {
+      autoUpdater
+        .checkForUpdates()
+        .then((result) => {})
+        .catch((err) => {
+          log.error("err", err);
+        });
+      autoUpdater.on("update-available", async () => {
+        log.info("update available");
+        log.info(autoUpdater.downloadUpdate());
       });
-    autoUpdater
-      .checkForUpdatesAndNotify()
-      .then((result) => {
-        log.info("result2", result);
-      })
-      .catch((err) => {
-        log.error("err", err);
-      });
-    autoUpdater.on("update-available", async () => {
-      log.info("update available");
-      log.info(autoUpdater.downloadUpdate());
-    });
 
-    autoUpdater.on("update-downloaded", () => {
-      log.info("update downloaded");
-      autoUpdater.quitAndInstall();
-    });
+      autoUpdater.on("update-downloaded", () => {
+        log.info("update downloaded");
+        autoUpdater.quitAndInstall();
+      });
+    } catch (error) {
+      console.log("error", error);
+    }
   } catch (error) {
-    console.log("error", error);
+    log.error("error", error);
+    app.quit();
   }
 });
 
@@ -357,7 +358,7 @@ expressApp.post("/set-directory", async (req, res) => {
       res.status(400).json({ error: "No directory selected" });
     }
   } catch (error) {
-    console.error("Error in /set-directory:", error);
+    log.error("Error in /set-directory:", error);
     res.status(500).json({
       error: "Internal server error",
     });
@@ -398,7 +399,7 @@ expressApp.put("/update-file", async (req, res) => {
     fs.writeFileSync(filePath, fileContent);
     res.status(200).send(filePath);
   } catch (error) {
-    console.error("Error in /update-file:", error);
+    log.error("Error in /update-file:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -434,7 +435,7 @@ expressApp.post("/get-file-content", async (req, res) => {
     const fileContent = fs.readFileSync(filePath, "utf-8");
     res.status(200).send(fileContent);
   } catch (error) {
-    console.error("Error in /get-file-content:", error);
+    log.error("Error in /get-file-content:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -461,7 +462,7 @@ expressApp.post("/pick-directory", (req, res) => {
       res.status(400).json({ error: "No directory selected" });
     }
   } catch (error) {
-    console.error("Error in /pick-directory:", error);
+    log.error("Error in /pick-directory:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -469,7 +470,6 @@ expressApp.post("/pick-directory", (req, res) => {
 // get the backup folder location
 expressApp.get("/backup/location", async (req, res) => {
   if (!checkSyncKey(req.body.syncKey)) {
-    console.log("nokey");
     res.status(500);
   } else {
     let backupPath = store.get("backupPath");
@@ -562,14 +562,14 @@ expressApp.put("/backup/:collection/:timestamp", async (req, res) => {
   try {
     await mkdirp(dirpath);
   } catch (err) {
-    console.error(err);
+    log.error(err);
     return res.status(500).send("Failed to create directory.");
   }
 
   const filepath = dirpath + `/${filename}`;
   fs.writeFile(filepath, JSON.stringify(req.body), function(err) {
     if (err) {
-      console.error(err);
+      log.error(err);
       return res.status(500).send("Failed to write to file.");
     }
     res.status(200).send("Data saved successfully.");
