@@ -113,6 +113,7 @@
   },
   "dependencies": {
     "copy-webpack-plugin": "^11.0.0",
+    "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "dotenv-webpack": "^8.0.1",
     "electron-log": "^4.4.8",
@@ -120,6 +121,8 @@
     "electron-squirrel-startup": "^1.0.0",
     "electron-store": "^8.1.0",
     "electron-updater": "^6.1.4",
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "openai": "^4.20.0",
+    "vectordb": "^0.3.8"
   }
 }
