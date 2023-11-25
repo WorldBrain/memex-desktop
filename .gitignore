@@ -101,3 +101,5 @@ env.yml
 electron-builder.yml
 
 .env
+
+data/sample-lancedb/recommendations_table.lance/

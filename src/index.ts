@@ -5,9 +5,12 @@ import { autoUpdater } from "electron-updater";
 import { dialog } from "electron";
 import Store from "electron-store";
 import crypto from "crypto";
+
 const log = require("electron-log");
+const lancedb = require("vectordb");
 require("dotenv").config();
 const settings = require("electron-settings");
+const cors = require("cors");
 
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY; // Must be 256 bits (32 characters)
 const IV_LENGTH = 16; // For AES, this is always 16
@@ -17,6 +20,14 @@ const store = new Store();
 var fs = require("fs");
 var mkdirp = require("mkdirp");
 var path = require("path");
+
+// VectorTable settings
+const uri = "data/sample-lancedb";
+let databaseTable = null;
+let db = null;
+let pipelineObject = null;
+const embed_fun = {};
+const tableName = "recommendations_table";
 
 let tray: Tray = null;
 
@@ -292,6 +303,13 @@ app.on("ready", async () => {
     log.error("error", error);
     app.quit();
   }
+
+  let table = null;
+  db = await lancedb.connect(uri);
+  try {
+    table = await db.openTable(tableName);
+    databaseTable = table;
+  } catch {}
 });
 
 app.on("activate", () => {
@@ -417,6 +435,128 @@ expressApp.post("/get-file-content", async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+expressApp.put("/index_document", async (req, res) => {
+  if (!checkSyncKey(req.body.syncKey)) {
+    res.status(404);
+    return;
+  }
+  try {
+    const embeddedContent = await embedContent(req.body.originalContent);
+
+    const documentToIndex = [
+      {
+        sourceApplication: "Memex",
+        createdWhen: req.body.createdWhen,
+        userId: req.body.userId,
+        normalizedUrl: req.body.normalizedUrl,
+        contentType: req.body.contentType,
+        originalContent: req.body.originalContent,
+        vector: embeddedContent,
+      },
+    ];
+
+    if (!databaseTable) {
+      databaseTable = await db.createTable(tableName, documentToIndex);
+    } else {
+      databaseTable.add(documentToIndex);
+    }
+    res.status(200).send(true);
+  } catch (error) {
+    log.error("Error in /index_document", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+expressApp.post("/find_similar", async (req, res) => {
+  console.log("testtttttt");
+  if (!checkSyncKey(req.body.syncKey)) {
+    res.status(404);
+    return;
+  }
+
+  console.log("findSimilar");
+  try {
+    const vectorQuery = await embedContent(req.body.contentText);
+
+    console.log("vector", vectorQuery);
+    const result = await databaseTable
+      .search(vectorQuery)
+      .limit(10)
+      .execute();
+
+    console.log("resul", result);
+
+    res.status(200).send(result);
+  } catch (error) {
+    log.error("Error in /index_document", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+expressApp.use(cors());
+
+async function embedContent(content) {
+  // You need to provide an OpenAI API key
+  const apiKey = "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";
+  // The embedding function will create embeddings for the 'text' column
+
+  const url = "https://api.openai.com/v1/embeddings";
+
+  console.log("content", content.length);
+
+  let response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "text-embedding-ada-002",
+        input: content,
+      }),
+    });
+  } catch (error) {
+    console.error("Error in /dfdf", error);
+    throw new Error(`Error: ${error.status}`);
+  }
+
+  if (!response.ok) {
+    throw new Error(`Error: ${response.status}`);
+  }
+
+  const data = await response.json();
+
+  const vectors = data.data[0].embedding;
+
+  console.log("data", vectors);
+  return vectors;
+}
+
+// function embeddingFunction(){
+
+//   if (!pipelineObject){
+//     const { pipeline } = await import('@xenova/transformers')
+//     pipelineObject = pipeline
+//   }
+//   const pipe = await pipelineObject('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+
+//   embed_fun.sourceColumn = 'text'
+//   embed_fun.embed = async function (batch) {
+//       let result = []
+//       // Given a batch of strings, we will use the `pipe` function to get
+//       // the vector embedding of each string.
+//       for (let text of batch) {
+//           // 'mean' pooling and normalizing allows the embeddings to share the
+//           // same length.
+//           const res = await pipe(text, { pooling: 'mean', normalize: true })
+//           result.push(Array.from(res['data']))
+//       }
+//       return (result)
+//   }
+
+// }
 
 // Exposing Server Endpoints for BACKUPS
 
