@@ -1,10 +1,15 @@
 import express from "express";
 import { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage } from "electron";
 import { autoUpdater } from "electron-updater";
+import TurndownService from "turndown";
 
 import { dialog } from "electron";
 import Store from "electron-store";
 import crypto from "crypto";
+import Anthropic from "@anthropic-ai/sdk";
+import { JSDOM } from "jsdom";
+import fetch from "node-fetch";
+import { pipeline } from "@xenova/transformers";
 
 const log = require("electron-log");
 const lancedb = require("vectordb");
@@ -12,24 +17,29 @@ require("dotenv").config();
 const settings = require("electron-settings");
 const cors = require("cors");
 
+// Electron App basic setup
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY; // Must be 256 bits (32 characters)
 const IV_LENGTH = 16; // For AES, this is always 16
-
 const store = new Store();
-
 var fs = require("fs");
 var mkdirp = require("mkdirp");
 var path = require("path");
+let tray: Tray = null;
+const EXPRESS_PORT = 11922; // Different from common React port 3000 to avoid conflicts
+const expressApp = express();
+expressApp.use(cors());
 
 // VectorTable settings
 const uri = "data/sample-lancedb";
 let databaseTable = null;
 let db = null;
-let pipelineObject = null;
-const embed_fun = {};
 const tableName = "recommendations_table";
 
-let tray: Tray = null;
+// TransformerJS Stuff
+
+////////////////////////////////
+/// ELECTRON APP BASIC SETUP ///
+////////////////////////////////
 
 if (app.dock) {
   // Check if the dock API is available (macOS specific)
@@ -49,9 +59,6 @@ declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
 if (require("electron-squirrel-startup")) {
   app.quit();
 }
-
-const EXPRESS_PORT = 11922; // Different from common React port 3000 to avoid conflicts
-const expressApp = express();
 
 expressApp.use(express.json({ limit: "50mb" })); // adjust the limit as required
 expressApp.use(express.urlencoded({ extended: true, limit: "50mb" })); // adjust the limit as required
@@ -328,7 +335,9 @@ function isPathComponentValid(component) {
   }
 }
 
-// Exposing Server Endpoints for PKM SYNC
+///////////////////////////
+/// PKM SYNC ENDPOINTS ///
+/////////////////////////
 
 expressApp.post("/set-directory", async (req, res) => {
   if (!checkSyncKey(req.body.syncKey)) {
@@ -436,30 +445,87 @@ expressApp.post("/get-file-content", async (req, res) => {
   }
 });
 
+///////////////////////////
+/// RABBIT HOLE ENDPOINTS ///
+/////////////////////////
+
+export type ImportSchema = {
+  sourceapplication: string;
+  pagetitle: string;
+  normalizedurl: string;
+  createdwhen: number;
+  userid: string;
+  contenttype: string;
+  contenttext: string;
+  vector: number[];
+};
+export type ExportSchema = {
+  sourceApplication: string;
+  pageTitle: string;
+  normalizedUrl: string;
+  createdWhen: number;
+  userId: string;
+  contentType: string;
+  contentText: string;
+  vector: number[];
+};
+
 expressApp.put("/index_document", async (req, res) => {
   if (!checkSyncKey(req.body.syncKey)) {
+    console.log("return");
     res.status(404);
     return;
   }
+  let document = req.body;
+  let originalText = req.body.contentText;
   try {
-    const embeddedContent = await embedContent(req.body.originalContent);
+    if (!originalText) {
+      let htmlContent = "";
+      try {
+        const response = await fetch("https://" + req.body.normalizedUrl);
+        htmlContent = await response.text();
+      } catch (error) {
+        console.error(error);
+      }
+      originalText = htmlContent;
+    }
+    let contentChunks = [];
+    if (document.contentType === "page") {
+      contentChunks = await splitContentInReasonableChunks(originalText);
+    }
 
-    const documentToIndex = [
-      {
-        sourceApplication: "Memex",
-        createdWhen: req.body.createdWhen,
-        userId: req.body.userId,
-        normalizedUrl: req.body.normalizedUrl,
-        contentType: req.body.contentType,
-        originalContent: req.body.originalContent,
-        vector: embeddedContent,
-      },
-    ];
+    if (document.contentType === "annotation") {
+      const turndownService = new TurndownService();
+      const markdownText = turndownService.turndown(originalText);
+      contentChunks = [markdownText];
+    }
 
-    if (!databaseTable) {
-      databaseTable = await db.createTable(tableName, documentToIndex);
-    } else {
-      databaseTable.add(documentToIndex);
+    for (let chunk of contentChunks) {
+      const processedChunk = await prepareContentForEmbedding(chunk);
+      const embeddedChunk = await embedContent(processedChunk);
+
+      // try {
+      //   let pipe = await pipeline("sentiment-analysis");
+      //   let out = await pipe("I love transformers!");
+      //   console.log("out", out); // 'out' is 'Positive
+      // } catch {}
+
+      const documentToIndex: ImportSchema = {
+        sourceapplication: "Memex",
+        pagetitle: req.body.pageTitle,
+        normalizedurl: req.body.normalizedUrl,
+        createdwhen: req.body.createdWhen,
+        userid: req.body.userId,
+        contenttype: req.body.contentType,
+        contenttext: chunk,
+        vector: embeddedChunk,
+      };
+
+      if (!databaseTable) {
+        databaseTable = await db.createTable(tableName, [documentToIndex]);
+      } else {
+        databaseTable.add([documentToIndex]);
+      }
     }
     res.status(200).send(true);
   } catch (error) {
@@ -468,41 +534,216 @@ expressApp.put("/index_document", async (req, res) => {
   }
 });
 expressApp.post("/find_similar", async (req, res) => {
-  console.log("testtttttt");
   if (!checkSyncKey(req.body.syncKey)) {
     res.status(404);
     return;
   }
-
-  console.log("findSimilar");
   try {
-    const vectorQuery = await embedContent(req.body.contentText);
+    const preparedContentText = await prepareContentForEmbedding(
+      req.body.contentText
+    );
 
-    console.log("vector", vectorQuery);
+    const vectorQuery = await embedContent(preparedContentText);
+
     const result = await databaseTable
       .search(vectorQuery)
-      .limit(10)
+      .where(`normalizedurl != '${req.body.normalizedUrl}'`)
+      .limit(30)
       .execute();
 
-    console.log("resul", result);
+    let filteredResult = result
+      .reduce((acc: any[], current: any) => {
+        const x = acc.find(
+          (item: any) =>
+            item.normalizedurl === current.normalizedurl && // only take one instance of a page result
+            item.contenttype === "page"
+        );
 
-    res.status(200).send(result);
+        if (current.contenttype === "annotation") {
+          const splitUrl = current.normalizedurl.split("/#");
+          if (splitUrl[0] === req.body.normalizedUrl) {
+            return acc;
+          }
+        }
+        if (!x) {
+          return acc.concat([current]);
+        } else {
+          if (x._distance > current._distance) {
+            const index = acc.indexOf(x);
+            acc[index] = current;
+          }
+          return acc;
+        }
+      }, [])
+      .filter((item) => item._distance < 0.4);
+
+    filteredResult = filteredResult.map((item) => {
+      return {
+        sourceApplication: "Memex",
+        pageTitle: item.pagetitle,
+        normalizedUrl: item.normalizedurl,
+        createdWhen: item.createdwhen,
+        userId: item.userid,
+        contentType: item.contenttype,
+        contentText: item.contenttext,
+        distance: item._distance,
+      };
+    });
+
+    res.status(200).send(filteredResult);
   } catch (error) {
-    log.error("Error in /index_document", error);
+    log.error("Error in /find_similar", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
 
-expressApp.use(cors());
+async function splitContentInReasonableChunks(contentText: string) {
+  const htmlDoc = new JSDOM(contentText);
 
-async function embedContent(content) {
+  const paragraphs = htmlDoc.window.document.querySelectorAll("p");
+
+  let chunks: string[] = [];
+
+  paragraphs.forEach((paragraph) => {
+    let chunk = paragraph.textContent;
+
+    const turndownService = new TurndownService();
+    chunk = turndownService.turndown(chunk);
+
+    chunks.push(chunk);
+  });
+
+  return chunks;
+}
+
+async function prepareContentForEmbedding(contentText: string) {
+  let response;
+
+  // Remove all special characters
+  contentText = contentText.replace(/[^\w\s]/gi, " ");
+
+  // Deduplicate words
+  let words = contentText.split(" ");
+
+  // Make all words lowercase
+  words = words.map((word) => word.toLowerCase().trim());
+
+  // Remove stop words
+  const stopWords = [
+    "a",
+    "an",
+    "the",
+    "in",
+    "is",
+    "it",
+    "you",
+    "are",
+    "for",
+    "from",
+    "as",
+    "with",
+    "their",
+    "if",
+    "on",
+    "that",
+    "at",
+    "by",
+    "this",
+    "and",
+    "to",
+    "be",
+    "which",
+    "or",
+    "was",
+    "of",
+    "and",
+    "in",
+    "is",
+    "it",
+    "that",
+    "then",
+    "there",
+    "these",
+    "they",
+    "we",
+    "were",
+    "you",
+    "your",
+    "I",
+    "me",
+    "my",
+    "the",
+    "to",
+    "and",
+    "in",
+    "is",
+    "it",
+    "of",
+    "that",
+    "you",
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "for",
+    "from",
+    "has",
+    "he",
+    "in",
+    "is",
+    "it",
+    "its",
+    "of",
+    "on",
+    "that",
+    "the",
+    "to",
+    "was",
+    "were",
+    "will",
+    "with",
+  ];
+  words = words.filter(
+    (word) => !stopWords.some((stopWord) => stopWord === word)
+  );
+
+  // response = words.join(" ");
+
+  response = [...new Set(words)].join(" ");
+
+  // const assistantPrompt = `You are given a text of a website article that I want to compare to a large corpus of other articles to find documents that are similar and relevant to the content of the given input article. Your output is passed to the embedding function that is then used to compare the content to the corpus.
+  // Please pre-process the text in such a way that is ideal for this type of comparison, by extracting key entities and topics for increased likelihood of achieving relevance.
+  // `;
+
+  // const anthropic = new Anthropic({
+  //   apiKey:
+  //     "", // defaults to process.env["ANTHROPIC_API_KEY"]
+  // });
+
+  // const prompt = `${assistantPrompt}${Anthropic.HUMAN_PROMPT} ${contentText}  ${Anthropic.AI_PROMPT}`;
+
+  // const completion = await anthropic.completions.create({
+  //   model: "claude-instant-1.2",
+  //   max_tokens_to_sample: 10000,
+  //   prompt: prompt,
+  // });
+
+  // console.log("completion", completion.completion);
+
+  // response = completion.completion
+  return response;
+}
+
+async function embedContent(content: string) {
   // You need to provide an OpenAI API key
-  const apiKey = "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";
+  const apiKey = "";
   // The embedding function will create embeddings for the 'text' column
 
   const url = "https://api.openai.com/v1/embeddings";
-
-  console.log("content", content.length);
 
   let response;
   try {
@@ -530,7 +771,6 @@ async function embedContent(content) {
 
   const vectors = data.data[0].embedding;
 
-  console.log("data", vectors);
   return vectors;
 }
 
@@ -557,6 +797,10 @@ async function embedContent(content) {
 //   }
 
 // }
+
+///////////////////////////
+/// BACKUP ENDPOINTS ///
+/////////////////////////
 
 // Exposing Server Endpoints for BACKUPS
 
