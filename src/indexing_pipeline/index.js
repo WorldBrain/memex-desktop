@@ -1,35 +1,36 @@
 const { splitContentInReasonableChunks } = require("./utils.js");
-const TurndownService = require("turndown");
 const log = require("electron-log");
 
-async function indexDocument(req, res, embedTextFunction, allTables) {
-  console.log("arrives");
-  var document = req.body;
-  var originalText = req.body.contentText;
+async function indexDocument(
+  fullUrlInput,
+  pageTitleInput,
+  fullHTMLInput,
+  createdWhenInput,
+  contentTypeInput,
+  sourceApplicationInput,
+  creatorIdInput,
+  embedTextFunction,
+  allTables
+) {
+  let fullUrl = fullUrlInput || "";
+  let pageTitle = pageTitleInput || "";
+  let createdWhen = createdWhenInput || "";
+  let contentType = contentTypeInput || "";
+  let creatorId = creatorIdInput || "";
+  let sourceApplication = sourceApplicationInput || "";
+  let fullHTML = fullHTMLInput || "";
+
   try {
-    if (!originalText) {
-      var htmlContent = "";
+    if (!fullHTML) {
       try {
-        var response = await fetch("https://" + req.body.normalizedUrl);
-        htmlContent = await response.text();
+        var response = await fetch(fullUrl);
+        fullHTML = await response.text();
       } catch (error) {
         console.error(error);
       }
-      originalText = htmlContent;
     }
     var contentChunks = [];
-    if (document.contentType === "page") {
-      contentChunks = await splitContentInReasonableChunks(originalText);
-    }
-    if (document.contentType === "rss-feed-item") {
-      contentChunks = await splitContentInReasonableChunks(originalText);
-    }
-
-    if (document.contentType === "annotation") {
-      var turndownService = new TurndownService();
-      var markdownText = turndownService.turndown(originalText);
-      contentChunks = [markdownText];
-    }
+    contentChunks = await splitContentInReasonableChunks(fullHTML);
 
     let promises = [];
     for (var chunk of contentChunks) {
@@ -37,17 +38,17 @@ async function indexDocument(req, res, embedTextFunction, allTables) {
       const vectors = embeddedChunk[0].data;
 
       var documentToIndex = {
-        sourceapplication: "Memex",
-        pagetitle: req.body.pageTitle,
-        normalizedurl: req.body.normalizedUrl,
-        createdwhen: req.body.createdWhen,
-        userid: req.body.userId,
-        contenttype: req.body.contentType,
+        fullurl: fullUrl,
+        pagetitle: pageTitle,
+        sourceapplication: sourceApplication,
+        createdwhen: createdWhen || Date.now(),
+        creatorid: creatorId || "",
+        contenttype: contentType || "",
         contenttext: chunk,
         vector: Array.from(vectors),
       };
 
-      console.log("documetnToIndex", documentToIndex);
+      console.log("documentToIndex", documentToIndex);
 
       const vectorDocsTable = allTables.vectorDocsTable;
       if (vectorDocsTable) {
@@ -55,13 +56,17 @@ async function indexDocument(req, res, embedTextFunction, allTables) {
       }
     }
     for (const promise of promises) {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      await promise;
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        await promise;
+      } catch (error) {
+        console.error("An error occurred:", error);
+      }
     }
-    return res.status(200).send(true);
+    return true;
   } catch (error) {
-    log.error("Error in /index_document", error);
-    return res.status(500).json({ error: "Internal server error" });
+    console.log("error", error);
+    return false;
   }
 }
 

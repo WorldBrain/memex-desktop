@@ -19,6 +19,32 @@ exports.splitContentInReasonableChunks = async function(contentText) {
 
   return chunks;
 };
+exports.cleanFullHTML = async function(fullHTML) {
+  let cleanFullHTML = fullHTML;
+
+  const dom = new JSDOM(cleanFullHTML);
+  const document = dom.window.document;
+
+  const scriptTags = document.getElementsByTagName("script");
+  const styleTags = document.getElementsByTagName("style");
+  const svgTags = document.getElementsByTagName("svg");
+
+  for (let i = scriptTags.length - 1; i >= 0; i--) {
+    scriptTags[i].parentNode.removeChild(scriptTags[i]);
+  }
+
+  for (let i = styleTags.length - 1; i >= 0; i--) {
+    styleTags[i].parentNode.removeChild(styleTags[i]);
+  }
+
+  for (let i = svgTags.length - 1; i >= 0; i--) {
+    svgTags[i].parentNode.removeChild(svgTags[i]);
+  }
+
+  cleanFullHTML = dom.serialize();
+
+  return cleanFullHTML;
+};
 
 exports.prepareContentForEmbedding = async function(contentText) {
   let response;

@@ -2,37 +2,39 @@ const log = require("electron-log");
 
 async function findSimilar(req, res, embedTextFunction, allTables) {
   try {
-    console.log("arrives");
+    console.log("arrives", req.body);
     // var vectorQuery = await embedContent(preparedContentText);
     const embeddedChunk = await embedTextFunction(req.body.contentText);
     const vectors = embeddedChunk[0].data;
 
     const vectorDocsTable = allTables.vectorDocsTable;
 
-    console.log("vectorDocsTable", vectors);
-
     var result = await vectorDocsTable
       .search(Array.from(vectors))
       .metricType("L2")
-      .where(
-        `normalizedurl != '${req.body.normalizedUrl}' AND createdwhen != 0`
-      )
+      .where(`fullurl != '${req.body.fullUrl}' AND createdwhen != 0`)
       .limit(30)
       .execute();
 
     var filteredResult = result
       .reduce(function(acc, current) {
         var x = acc.find(function(item) {
+          console.log(
+            "item",
+            item.fullurl === current.fullurl,
+            item.contenttype
+          );
           return (
-            item.normalizedurl === current.normalizedurl && // only take one instance of a page result
-            (item.contenttype === "page" ||
-              item.contenttype === "rss-feed-item")
+            item.fullurl === current.fullurl // only take one instance of a page result
+            // (item.contenttype === "page" ||
+            //   item.contenttype === "rss-feed-item")
           );
         });
 
         if (current.contenttype === "annotation") {
-          var splitUrl = current.normalizedurl.split("/#");
-          if (splitUrl[0] === req.body.normalizedUrl) {
+          console.log("current", current); // don't return annotations on the current page
+          var splitUrl = current.fullurl?.split("/#");
+          if (splitUrl[0] === req.body.fullUrl) {
             return acc;
           }
         }
@@ -52,18 +54,16 @@ async function findSimilar(req, res, embedTextFunction, allTables) {
 
     filteredResult = filteredResult.map(function(item) {
       return {
-        sourceApplication: "Memex",
+        fullUrl: item.fullurl,
         pageTitle: item.pagetitle,
-        normalizedUrl: item.normalizedurl,
-        createdWhen: item.createdwhen,
-        userId: item.userid,
-        contentType: item.contenttype,
         contentText: item.contenttext,
+        createdWhen: item.createdwhen,
+        contentType: item.contenttype,
+        sourceApplication: item.sourceApplication,
+        creatorId: item.creatorid,
         distance: item._distance,
       };
     });
-
-    console.log("filteredResult", filteredResult);
 
     return res.status(200).send(filteredResult);
   } catch (error) {

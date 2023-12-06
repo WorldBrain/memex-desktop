@@ -11,9 +11,9 @@ const {
 } = electron;
 const autoUpdater = require("electron-updater").autoUpdater;
 const Store = require("electron-store");
-const { Field, FixedSizeList, Float32, Schema, Utf8 } = require("apache-arrow");
-
 const crypto2 = require("crypto");
+
+const sqlite3 = require("sqlite3").verbose();
 
 const log = require("electron-log");
 const lancedb = require("vectordb");
@@ -35,21 +35,17 @@ expressApp.use(cors());
 
 const { indexDocument } = require("./indexing_pipeline/index.js");
 const { findSimilar } = require("./search/find_similar.js");
+const {
+  addRSSFeedSource,
+  getAllRSSSources,
+} = require("./indexing_pipeline/rssFeeds/index.js");
 // VectorTable settings
-let sourcesDBuri = "data/sourcesDB";
 let vectorDBuri = "data/vectorDB";
-let pageSourceTable = null;
-let annotationSourceTable = null;
-let rssEndpointsTable = null;
+let sourcesDB = null;
 let vectorDocsTable = null;
-let pageourcesTableName = "pagesourcestable";
-let annotationSourcesTableName = "annotationourcestable";
-let rssEndpointsTableName = "rssendpointstable";
 let vectorDocsTableName = "vectordocstable";
 let allTables = {
-  pageSourceTable: pageSourceTable,
-  annotationSourceTable: annotationSourceTable,
-  rssEndpointsTable: rssEndpointsTable,
+  sourcesDB: sourcesDB,
   vectorDocsTable: vectorDocsTable,
 };
 
@@ -148,7 +144,6 @@ function encrypt(text) {
 }
 
 function decrypt(text) {
-  console.log("text", text);
   var textParts = text.split(":");
   var iv = Buffer.from(textParts.shift(), "hex");
   var encryptedText = Buffer.from(textParts.join(":"), "hex");
@@ -363,18 +358,54 @@ app.on("ready", async () => {
   embedTextFunction = await generateEmbeddingFromText;
 
   // setting up all databases and tables
-  let sourcesDB = await lancedb.connect(sourcesDBuri);
+
+  const dbPath = "./data/sourcesDB.db";
+
+  if (!fs.existsSync(dbPath)) {
+    var sourcesDB = new sqlite3.Database(
+      dbPath,
+      sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE,
+      (err) => {
+        if (err) {
+          console.error("Error creating the sourcesDB DB", err);
+        }
+      }
+    );
+  } else {
+    var sourcesDB = new sqlite3.Database(
+      dbPath,
+      sqlite3.OPEN_READWRITE,
+      (err) => {
+        if (err) {
+          console.error("Error opening the sourcesDB DB", err);
+        }
+      }
+    );
+  }
+
+  // create Tables
+  createRSSsourcesTable = `CREATE TABLE IF NOT EXISTS rssSourcesTable(feedUrl STRING PRIMARY KEY, feedTitle STRING, isSubstack BOOLEAN, lastIndexed INTEGER)`;
+  createWebPagesTable = `CREATE TABLE IF NOT EXISTS webPagesTable(fullUrl STRING PRIMARY KEY, createdWhen INTEGER, pageTitle STRING, fullHTML STRING, sourceApplication STRING, creatorId STRING)`;
+  createAnnotationsTable = `CREATE TABLE IF NOT EXISTS annotationsTable(fullUrl STRING PRIMARY KEY, pageTitle STRING, fullHTML STRING, contentType STRING, createdWhen INTEGER, sourceApplication STRING, creatorId STRING)`;
+
+  sourcesDB.run(createRSSsourcesTable, function(err) {
+    if (err) {
+      console.log("err", err);
+    }
+  });
+  sourcesDB.run(createWebPagesTable, function(err) {
+    if (err) {
+      console.log("err", err);
+    }
+  });
+  sourcesDB.run(createAnnotationsTable, function(err) {
+    if (err) {
+      console.log("err", err);
+    }
+  });
+
   let vectorDB = await lancedb.connect(vectorDBuri);
   try {
-    // pageSourceTable = await sourcesDB.openTable(pageourcesTableName);
-    // if ((await pageSourceTable.countRows()) === 0) {
-    //   pageSourceTable.add([defaultVectorDocument]);
-    // }
-
-    // annotationSourceTable = await sourcesDB.openTable(
-    //   annotationSourcesTableName
-    //   );
-    //   rssEndpointsTable = await sourcesDB.openTable(rssEndpointsTableName);
     try {
       vectorDocsTable = await vectorDB.openTable(vectorDocsTableName);
     } catch {
@@ -384,13 +415,13 @@ app.on("ready", async () => {
         }
 
         let defaultVectorDocument = {
-          sourceapplication: "",
-          pagetitle: "",
-          normalizedurl: "",
+          fullurl: "null",
+          pagetitle: "null",
+          sourceapplication: "null",
           createdwhen: 0,
-          userid: "",
-          contenttype: "",
-          contenttext: "",
+          creatorid: "null",
+          contenttype: "null",
+          contenttext: "null",
           vector: generateZeroVector(768),
         };
 
@@ -403,15 +434,13 @@ app.on("ready", async () => {
     if ((await vectorDocsTable.countRows()) === 0) {
       vectorDocsTable.add([defaultVectorDocument]);
     }
-    allTables = {
-      pageSourceTable: pageSourceTable,
-      annotationSourceTable: annotationSourceTable,
-      rssEndpointsTable: rssEndpointsTable,
-      vectorDocsTable: vectorDocsTable,
-    };
   } catch (error) {
     console.log("error", error);
   }
+  allTables = {
+    sourcesDB: sourcesDB,
+    vectorDocsTable: vectorDocsTable,
+  };
 });
 
 async function generateEmbeddingFromText(text2embed) {
@@ -436,7 +465,143 @@ function isPathComponentValid(component) {
     return true;
   }
 }
+///////////////////////////
+/// RABBIT HOLE ENDPOINTS ///
+/////////////////////////
 
+expressApp.put("/add_page", async function(req, res) {
+  var fullUrl = req.body.fullUrl;
+  var pageTitle = req.body.pageTitle;
+  var fullHTML = req.body.fullHTML;
+  var createdWhen = req.body.createdWhen;
+  var contentType = req.body.contentType;
+  var creatorId = req.body.creatorId;
+  var sourceApplication = req.body.sourceApplication;
+
+  try {
+    await new Promise((resolve, reject) => {
+      allTables.sourcesDB.run(
+        `INSERT INTO webPagesTable VALUES(?, ?, ?, ?, ?, ?, ?)`,
+        [
+          fullUrl,
+          pageTitle,
+          fullHTML,
+          contentType,
+          createdWhen,
+          sourceApplication,
+          creatorId,
+        ],
+        function(err) {
+          if (err) {
+            console.log("err", err); // 'statement' failed: UNIQUE constraint failed: pagesTable._id
+            return reject(err);
+          }
+          resolve();
+        }
+      );
+    });
+
+    await indexDocument(
+      fullUrl,
+      pageTitle,
+      fullHTML,
+      createdWhen,
+      contentType,
+      sourceApplication,
+      creatorId,
+      embedTextFunction,
+      allTables
+    );
+    return res.status(200).send(true);
+  } catch (error) {
+    log.error("Error in /index_document", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+expressApp.put("/add_annotation", async function(req, res) {
+  var fullUrl = req.body.fullUrl;
+  var pageTitle = req.body.pageTitle;
+  var fullHTML = req.body.fullHTML;
+  var createdWhen = req.body.createdWhen;
+  var contentType = req.body.contentType;
+  var creatorId = req.body.creatorId;
+  var sourceApplication = req.body.sourceApplication;
+
+  try {
+    await new Promise((resolve, reject) => {
+      allTables.sourcesDB.run(
+        `INSERT INTO annotationsTable VALUES(?, ?, ?, ?, ?, ?, ?)`,
+        [
+          fullUrl,
+          pageTitle,
+          fullHTML,
+          contentType,
+          createdWhen,
+          sourceApplication,
+          creatorId,
+        ],
+        function(err) {
+          if (err) {
+            console.log("err", err); // 'statement' failed: UNIQUE constraint failed: pagesTable._id
+            return reject(err);
+          }
+          resolve();
+        }
+      );
+    });
+
+    await indexDocument(
+      fullUrl,
+      pageTitle,
+      fullHTML,
+      createdWhen,
+      contentType,
+      sourceApplication,
+      creatorId,
+      embedTextFunction,
+      allTables
+    );
+    return res.status(200).send(true);
+  } catch (error) {
+    log.error("Error in /index_document", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+  // return await indexAnnotation(req);
+});
+
+expressApp.post("/get_similar", async function(req, res) {
+  return await findSimilar(req, res, embedTextFunction, allTables);
+});
+
+expressApp.post("/add_rss_feed_source", async function(req, res) {
+  const feedUrl = req.body.feedUrl;
+  const isSubstack = req.body.isSubstack;
+
+  // logic for how RSS feed is added to the database, and the cron job is set up
+  try {
+    await addRSSFeedSource(feedUrl, embedTextFunction, allTables, isSubstack);
+    return res.status(200).send(true);
+  } catch (error) {
+    log.error(`Error adding ${feedUrl} in /add_rss_feed`, error);
+    return res.status(500).json({ error: error });
+  }
+});
+
+expressApp.get("/get_all_rss_sources", async function(req, res) {
+  // logic for how RSS feed is added to the database, and the cron job is set up
+
+  try {
+    const rssSources = await getAllRSSSources(allTables);
+    return res.status(200).send(rssSources);
+  } catch (error) {
+    log.error(`Error adding ${feedUrl} in /add_rss_feed`, error);
+    return res.status(500).json({ error: error });
+  }
+});
+expressApp.put("/remove_rss_feed", async function(req, res) {
+  // logic for how RSS feed is added to the database, and the cron job is set up
+});
 ///////////////////////////
 /// PKM SYNC ENDPOINTS ///
 /////////////////////////
@@ -546,301 +711,6 @@ expressApp.post("/get-file-content", async function(req, res) {
     res.status(500).json({ error: "Internal server error" });
   }
 });
-
-///////////////////////////
-/// RABBIT HOLE ENDPOINTS ///
-/////////////////////////
-
-expressApp.put("/add_page", async function(req, res) {
-  console.log("works");
-  return await indexDocument(req, res, embedTextFunction, allTables);
-});
-
-expressApp.put("/add_annotation", async function(req, res) {
-  // return await indexAnnotation(req);
-});
-
-expressApp.post("/get_similar", async function(req, res) {
-  console.log("searfch");
-  return await findSimilar(req, res, embedTextFunction, allTables);
-});
-
-expressApp.put("/add_rss_feed", async function(req, res) {
-  // logic for how RSS feed is added to the database, and the cron job is set up
-});
-
-expressApp.put("/fetch_rss_feed", async function(req, res) {
-  // logic for how RSS feed is added to the database, and the cron job is set up
-});
-expressApp.put("/remove_rss_feed", async function(req, res) {
-  // logic for how RSS feed is added to the database, and the cron job is set up
-});
-
-// expressApp.put("/index_document", async function(req, res) {
-//   if (!checkSyncKey(req.body.syncKey)) {
-//     console.log("return");
-//     res.status(404);
-//     return;
-//   }
-//   var document = req.body;
-//   var originalText = req.body.contentText;
-//   try {
-//     if (!originalText) {
-//       var htmlContent = "";
-//       try {
-//         var response = await fetch("https://" + req.body.normalizedUrl);
-//         htmlContent = await response.text();
-//       } catch (error) {
-//         console.error(error);
-//       }
-//       originalText = htmlContent;
-//     }
-//     var contentChunks = [];
-//     if (document.contentType === "page") {
-//       contentChunks = await splitContentInReasonableChunks(originalText);
-//     }
-//     if (document.contentType === "rss-feed-item") {
-//       contentChunks = await splitContentInReasonableChunks(originalText);
-//     }
-
-//     if (document.contentType === "annotation") {
-//       var turndownService = new TurndownService();
-//       var markdownText = turndownService.turndown(originalText);
-//       contentChunks = [markdownText];
-//     }
-
-//     let promises = [];
-//     for (var chunk of contentChunks) {
-//       // var processedChunk = await prepareContentForEmbedding(chunk);
-//       const embeddedChunk = await embedTextFunction(chunk);
-//       const vectors = embeddedChunk[0].data;
-
-//       var documentToIndex = {
-//         sourceapplication: "Memex",
-//         pagetitle: req.body.pageTitle,
-//         normalizedurl: req.body.normalizedUrl,
-//         createdwhen: req.body.createdWhen,
-//         userid: req.body.userId,
-//         contenttype: req.body.contentType,
-//         contenttext: chunk,
-//         vector: Array.from(vectors),
-//       };
-
-//       console.log("documetnToIndex", documentToIndex.normalizedurl);
-
-//       if (!databaseTable) {
-//         console.log("push new table");
-//         await db.createTable(tableName, [documentToIndex]);
-//         await new Promise((resolve) => setTimeout(resolve, 1000));
-//       } else {
-//         promises.push(databaseTable.add([documentToIndex]));
-//       }
-//     }
-//     for (const promise of promises) {
-//       await new Promise((resolve) => setTimeout(resolve, 100));
-//       await promise;
-//     }
-//     res.status(200).send(true);
-//   } catch (error) {
-//     log.error("Error in /index_document", error);
-//     res.status(500).json({ error: "Internal server error" });
-//   }
-// });
-
-// expressApp.post("/find_similar", async function(req, res) {
-//   if (!checkSyncKey(req.body.syncKey)) {
-//     res.status(404);
-//     return;
-//   }
-
-//   try {
-//     var processedChunk = await prepareContentForEmbedding(req.body.contentText);
-
-//     // var vectorQuery = await embedContent(preparedContentText);
-
-//     const embeddedChunk = await embedTextFunction(processedChunk);
-//     const vectors = embeddedChunk[0].data;
-
-//     var result = await vectorDocsTable
-//       .search(Array.from(vectors))
-//       .where(`normalizedurl != '${req.body.normalizedUrl}'`)
-//       .limit(30)
-//       .execute();
-
-//     var filteredResult = result
-//       .reduce(function(acc, current) {
-//         var x = acc.find(function(item) {
-//           return (
-//             item.normalizedurl === current.normalizedurl && // only take one instance of a page result
-//             (item.contenttype === "page" ||
-//               item.contenttype === "rss-feed-item")
-//           );
-//         });
-
-//         if (current.contenttype === "annotation") {
-//           var splitUrl = (current.normalizedurl).split("/#");
-//           if (splitUrl[0] === req.body.normalizedUrl) {
-//             return acc;
-//           }
-//         }
-//         if (!x) {
-//           return acc.concat([current]);
-//         } else {
-//           if (x._distance > current._distance) {
-//             var index = acc.indexOf(x);
-//             acc[index] = current;
-//           }
-//           return acc;
-//         }
-//       }, [])
-//       .filter(function(item) {
-//         return item._distance < 2;
-//       });
-
-//     filteredResult = filteredResult.map(function(item) {
-//       return {
-//         sourceApplication: "Memex",
-//         pageTitle: item.pagetitle,
-//         normalizedUrl: item.normalizedurl,
-//         createdWhen: item.createdwhen,
-//         userId: item.userid,
-//         contentType: item.contenttype,
-//         contentText: item.contenttext,
-//         distance: item._distance,
-//       };
-//     });
-
-//     console.log("filteredResult", filteredResult);
-
-//     res.status(200).send(filteredResult);
-//   } catch (error) {
-//     log.error("Error in /find_similar", error);
-//     res.status(500).json({ error: "Internal server error" });
-//   }
-// });
-
-// async function splitContentInReasonableChunks(contentText) {
-//   var htmlDoc = new JSDOM(contentText);
-
-//   var paragraphs = htmlDoc.window.document.querySelectorAll("p");
-
-//   var chunks = [];
-
-//   paragraphs.forEach(function(paragraph) {
-//     var chunk = paragraph.textContent;
-
-//     var turndownService = new TurndownService();
-//     chunk = turndownService.turndown(chunk);
-
-//     chunks.push(chunk);
-//   });
-
-//   return chunks;
-// // }
-
-// async function prepareContentForEmbedding(contentText) {
-//   let response;
-
-//   // Remove all special characters
-//   contentText = contentText.replace(/[^\w\s]/gi, " ");
-
-//   // Deduplicate words
-//   var words = contentText.split(" ");
-
-//   // Make all words lowercase
-//   words = words.map(function(word) {
-//     return word.toLowerCase().trim();
-//   });
-
-//   // Remove stop words
-//   var stopWords = [
-//     "a",
-//     "an",
-//     "the",
-//     "in",
-//     "is",
-//     "it",
-//     "you",
-//     "are",
-//     "for",
-//     "from",
-//     "as",
-//     "with",
-//     "their",
-//     "if",
-//     "on",
-//     "that",
-//     "at",
-//     "by",
-//     "this",
-//     "and",
-//     "to",
-//     "be",
-//     "which",
-//     "or",
-//     "was",
-//     "of",
-//     "and",
-//     "in",
-//     "is",
-//     "it",
-//     "that",
-//     "then",
-//     "there",
-//     "these",
-//     "they",
-//     "we",
-//     "were",
-//     "you",
-//     "your",
-//     "I",
-//     "me",
-//     "my",
-//     "the",
-//     "to",
-//     "and",
-//     "in",
-//     "is",
-//     "it",
-//     "of",
-//     "that",
-//     "you",
-//     "a",
-//     "an",
-//     "and",
-//     "are",
-//     "as",
-//     "at",
-//     "be",
-//     "by",
-//     "for",
-//     "from",
-//     "has",
-//     "he",
-//     "in",
-//     "is",
-//     "it",
-//     "its",
-//     "of",
-//     "on",
-//     "that",
-//     "the",
-//     "to",
-//     "was",
-//     "were",
-//     "will",
-//     "with",
-//   ];
-//   words = words.filter(function(word) {
-//     return !stopWords.some(function(stopWord) {
-//       return stopWord === word;
-//     });
-//   });
-
-//   response = Array.from(new Set(words)).join(" ");
-
-//   return response;
-// }
 
 ///////////////////////////
 /// BACKUP ENDPOINTS ///
