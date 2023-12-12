@@ -42,7 +42,7 @@ const {
   getAllRSSSources,
 } = require("./indexing_pipeline/rssFeeds/index.js");
 // VectorTable settings
-let vectorDBuri = "data/vectorDB";
+let vectorDBuri = path.join(process.resourcesPath, "data/vectorDB");
 let sourcesDB = null;
 let vectorDocsTable = null;
 let vectorDocsTableName = "vectordocstable";
@@ -112,7 +112,16 @@ expressApp.get("/echo", (req, res) => {
 var server = null;
 
 async function initializeDatabase() {
-  const dbPath = "./data/sourcesDB.db";
+  let dbPath = null;
+  log.log("paths", process.resourcesPath, __dirname, path.resolve(__dirname));
+  if (process.env.NODE_ENV == null) {
+    dbPath = path.join(process.resourcesPath, "data/sourcesDB.db");
+  } else {
+    dbPath = path.joinpath.join(
+      path.resolve(process.resourcesPath),
+      "data/sourcesDB.db"
+    );
+  }
   if (!fs.existsSync(dbPath)) {
     sourcesDB = await AsyncDatabase.open(dbPath);
 
@@ -356,11 +365,13 @@ app.on("ready", async () => {
     log.catchErrors();
     let trayIconPath = null;
 
-    if (process.env.NODE_ENV === "development") {
-      trayIconPath = path.join(__dirname, "src/img/tray_icon.png");
+    log.log("process.env.s", process.env.NODE_ENV);
+    if (process.env.NODE_ENV == null) {
+      trayIconPath = path.join(__dirname, "img/tray_icon.png");
+      trayIconPath = path.join(process.resourcesPath, "src/img/tray_icon.png");
     } else {
       trayIconPath = path.join(
-        electron.app.getAppPath(),
+        process.resourcesPath,
         "src",
         "img",
         "tray_icon.png"

@@ -25,7 +25,7 @@
     "appId": "memex-desktop",
     "productName": "Memex-Desktop",
     "copyright": "Copyright (c) 2023 Memex.Garden",
-    "artifactName": "${appId}-v${version}-${os}-${arch}.${ext}",
+    "artifactName": "${productName}-v${version}-${os}-${arch}.${ext}",
     "publish": [
       {
         "provider": "github",
@@ -77,7 +77,8 @@
     "extraResources": [
       "src/img/tray_icon.png",
       "src/models/*",
-      "data/*"
+      "data/*",
+      "node_modules/@xenova/*"
     ]
   },
   "repository": {
