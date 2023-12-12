@@ -2,124 +2,123 @@
 
 const { indexDocument } = require("../index.js");
 const { cleanFullHTML } = require("../utils.js");
-var JSDOM = require("jsdom").JSDOM;
+const xml2js = require("xml2js");
+const jsdom = require("jsdom");
+const cheerio = require("cheerio");
+
+const { JSDOM } = jsdom;
 
 async function getAllRSSSources(allTables) {
   const rssSourcesTable = allTables.rssSourcesTable;
   const allRSSSources = await rssSourcesTable.getAll();
 
-  console.log("allRSSSources", allRSSSources);
-
   return allRSSSources;
 }
 
-async function addRSSFeedSource(
+async function addFeedSource(
   feedUrl,
+  feedTitle,
   embedTextFunction,
   allTables,
-  isSubstack
+  type,
+  entityExtractionFunction
 ) {
   try {
     // check if the RSS feed source already exists in the database
-
     const sourcesDB = allTables.sourcesDB;
+    feedTitle = feedTitle;
 
-    console.log("sourcesDB", sourcesDB);
+    // prepare Substack link structure
+    const isSubstack =
+      feedUrl.includes(".substack.com/") || type === "substack";
 
-    // let existingEndpoint;
-    // try {
-    //   existingEndpoint = await rssEndpointsTable.get(feedUrl);
-    //   console.log("test", existingEndpoint);
-    //   if (existingEndpoint.length > 0) {
-    //     new Error(`RSS feed already exists: ${feedUrl}`);
-    //     return false;
-    //   }
-    // } catch (error) {
-    //   console.log("error", error);
-    // }
+    let feedURLprocessed = feedUrl;
 
-    let feedURLprocessed;
-
-    if (feedUrl.startsWith("https://substack.com/") || isSubstack) {
-      feedURLprocessed = feedUrl + "/feed";
+    if (isSubstack && !feedURLprocessed.endsWith("/feed")) {
+      const url = new URL(feedUrl);
+      feedURLprocessed = `${url.protocol}//${url.host}/feed`;
     }
 
-    let feedData;
+    // check if feed entry already exists
+    let existingEndpoint;
     try {
-      const response = await fetch(feedURLprocessed);
-      if (response.ok) {
-        // if HTTP-status is 200-299
-        // get the response body (the method explained below)
-        feedData = await response.text();
-      } else {
-        console.error("HTTP-Error: " + response.status);
-      }
-    } catch (error) {
-      console.error("Failed to load RSS feed: ", error);
+      existingEndpoint = await sourcesDB.get(
+        `SELECT * FROM rssSourcesTable WHERE feedUrl = ? AND lastSynced IS NOT NULL`,
+        [feedUrl]
+      );
+    } catch (error) {}
+
+    if (existingEndpoint) {
+      console.log("Feed Already Saved");
+      return;
     }
 
-    const dom = new JSDOM(feedData);
-    let xmlDoc = dom.window.document;
-    let feedTitleNode = xmlDoc
-      .getElementsByTagName("channel")[0]
-      .getElementsByTagName("title")[0];
-    let feedTitle = feedTitleNode.textContent || feedTitleNode.innerText;
-    feedTitle = feedTitle.replace(/<!\[CDATA\[(.*?)\]\]>/g, "$1");
-    feedTitle = feedTitle || feedTitleNode.innerText;
-    // let feedDescription = xmlDoc
-    //   .getElementsByTagName("channel")[0]
-    //   .getElementsByTagName("description").textContent;
-    // let feedIcon = xmlDoc
-    //   .getElementsByTagName("channel")[0]
-    //   .getElementsByTagName("image")[0].childNodes[0].nodeValue;
-
-    const RSSfeedData = {
+    let feedDataToSave = {
       feedUrl: feedUrl,
       feedTitle: feedTitle,
       // feedIcon: feedIcon,
       // feedDescription: feedDescription,
-      lastSynced: Date.now(),
+      lastSynced: null,
     };
 
-    try {
-      const sql = `INSERT INTO rssSourcesTable VALUES (?, ?, ?, ?)`;
-      sourcesDB.run(sql, [
-        RSSfeedData.feedUrl,
-        RSSfeedData.feedTitle,
-        isSubstack,
-        RSSfeedData.lastSynced,
-      ]);
-    } catch (error) {
-      console.log("Feed Already Saved");
-    }
-
-    console.log("test");
+    let feedData;
 
     if (isSubstack) {
       let year = 2023;
       let links = [];
       let fetchedAllHistory = false;
 
+      try {
+        const response = await fetch(feedURLprocessed);
+        if (response.ok) {
+          // if HTTP-status is 200-299
+          // get the response body (the method explained below)
+          feedData = await response.text();
+        } else {
+          feedData = null;
+          console.error("HTTP-Error: " + response.status);
+          return;
+        }
+      } catch (error) {
+        feedData = null;
+        console.error("Failed to load RSS feed: ", error);
+        return;
+      }
+
+      const parser = new xml2js.Parser();
+      let parsedData;
+
+      parser.parseString(feedData, function(err, result) {
+        if (err) {
+          console.error("Failed to parse RSS feed: ", err);
+        } else {
+          parsedData = result.rss.channel[0];
+        }
+      });
+
+      if (!feedTitle || feedTitle.length === 0) {
+        feedDataToSave.feedTitle = parsedData.title[0];
+      }
+
       while (!fetchedAllHistory) {
-        const urlToFetch = `${feedUrl}/sitemap/${year}`;
+        const urlToFetch = `${feedUrl.replace("/feed", "")}/sitemap/${year}`;
         const response = await fetch(urlToFetch);
         if (response.status === 404) {
           fetchedAllHistory = true;
         }
         const text = await response.text();
-        const dom = new JSDOM(text);
+        const $ = cheerio.load(text);
+        const anchors = $("a");
 
-        const anchors = dom.window.document.querySelectorAll("a");
-        anchors.forEach((anchor) => {
-          const href = anchor.getAttribute("href");
-          if (href.startsWith(`${feedUrl}/p/`)) {
+        anchors.each((i, anchor) => {
+          const href = $(anchor).attr("href");
+          if (href.startsWith(`${feedUrl.replace("/feed", "")}/p/`)) {
             links.push(href);
           }
         });
         year--;
       }
 
-      let pageRawData;
       for (let link of links) {
         await new Promise((resolve) => setTimeout(resolve, 1000));
         const response = await fetch(link, {
@@ -130,89 +129,208 @@ async function addRSSFeedSource(
         const fullHTML = await response.text();
         const cleanHTML = await cleanFullHTML(fullHTML);
 
-        const dom = new JSDOM(cleanHTML);
-        const head = dom.window.document.getElementsByTagName("head")[0];
-        // const body = dom.window.document.getElementsByTagName("body")[0];
+        const $ = cheerio.load(fullHTML);
+        let metaDataTags;
 
-        const title =
-          head
-            .querySelector('meta[property="og:title"]')
-            ?.getAttribute("content") || "";
-        // const metaTags = head.querySelectorAll("meta");
+        try {
+          const scripts = $("script");
+          const jsonScript = scripts
+            .filter(
+              (i, script) => $(script).attr("type") === "application/ld+json"
+            )
+            .first();
 
-        // let creationDate = "";
-        // body.getElemn.forEach((meta) => {
-        //   if (meta.getAttribute("name")) {
-        //     creationDate = meta.getAttribute("content");
-        //   }
-        // });
+          metaDataTags = JSON.parse(jsonScript.html());
+        } catch (error) {}
+
+        const datePublishedUnix =
+          new Date(metaDataTags.datePublished)?.getTime() / 1000 || 0;
+        const title = $("title").text() || metaDataTags.headline;
 
         const pageDataToSave = {
           fullUrl: link,
-          createdWhen: "",
           pageTitle: title,
-          fullHTML: cleanHTML,
+          cleanHTML: cleanHTML,
+          contentType: "rss-feed-item",
+          createdWhen: datePublishedUnix,
           sourceApplication: "RSS",
-          creatorId: null,
+          creatorId: "",
+          metaDataJSON: JSON.stringify(metaDataTags) || "",
         };
 
-        try {
-          await new Promise((resolve, reject) => {
-            sourcesDB.run(
-              `INSERT INTO webPagesTable VALUES(?, ?, ?, ?, ?, ?)`,
-              [
-                pageDataToSave.fullUrl,
-                pageDataToSave.createdWhen,
-                pageDataToSave.pageTitle,
-                pageDataToSave.fullHTML,
-                pageDataToSave.sourceApplication,
-                pageDataToSave.creatorId,
-              ],
-              function(err) {
-                if (err) {
-                  console.log("err", err); // 'statement' failed: UNIQUE constraint failed: pagesTable._id
-                  return reject(err);
-                }
-                resolve();
-              }
-            );
-          });
-        } catch (error) {
-          console.log(("Page Already Saved: ", error));
-        }
-
-        try {
-          await indexDocument(
-            link,
-            title,
-            cleanHTML,
-            "",
-            "rss-feed-item",
-            "RSS",
-            "",
-            embedTextFunction,
-            allTables
-          );
-        } catch (error) {
-          console.log("Error indexing:", error);
-        }
+        saveAndIndexFeedPages(
+          sourcesDB,
+          pageDataToSave,
+          embedTextFunction,
+          allTables,
+          entityExtractionFunction
+        );
       }
+    } else {
+      let previousFeedData = feedData;
+      let page = 1;
 
-      return true;
+      while (feedData) {
+        // sometimes the page logic does not work and its the same page result bc of meaning less query params
+        // catches this and then stops the loop
+        if (previousFeedData === feedData && page > 1) {
+          feedData = null;
+          return;
+        }
+        if (page > 0) {
+          try {
+            const response = await fetch(feedURLprocessed + `?page=${page}`);
+            if (response.ok) {
+              // if HTTP-status is 200-299
+              // get the response body (the method explained below)
+              feedData = await response.text();
+              previousFeedData = feedData;
+            } else {
+              feedData = null;
+              console.error("HTTP-Error: " + response.status);
+              return;
+            }
+          } catch (error) {
+            feedData = null;
+            console.error("Failed to load RSS feed: ", error);
+            return;
+          }
+        }
+
+        const parser = new xml2js.Parser();
+        let parsedData;
+        parser.parseString(feedData, function(err, result) {
+          if (err) {
+            console.error("Failed to parse RSS feed: ", err);
+          } else {
+            parsedData = result.rss.channel[0];
+          }
+        });
+
+        if ((!feedTitle || feedTitle.length === 0) && (page < 1 || !page)) {
+          feedDataToSave.feedTitle = parsedData.title[0];
+        }
+
+        for (let i = 0; i < parsedData.item.length; i++) {
+          let item = parsedData.item[i];
+          let title = item.title && item.title[0];
+          let link = item.link && item.link[0];
+          let fullHTML = "";
+          let pubDate = item.pubDate && item.pubDate[0];
+          let createdWhen = new Date(pubDate).getTime();
+          let creatorId = item.author && item.author[0];
+
+          await fetch(link)
+            .then((response) => response.text())
+            .then(async (body) => {
+              fullHTML = body;
+              cleanHTML = await cleanFullHTML(fullHTML);
+            })
+            .catch((error) => {
+              console.error("Failed to load full HTML: ", error);
+            });
+
+          // console.log("item", item);
+          // title = item.querySelector("title").textContent;
+          // link = item.querySelector("link").textContent;
+          // pubDate = item.querySelector("pubDate").textContent;
+          // content = item.querySelector("content\\:encoded").textContent;
+          // createdWhen = new Date(pubDate).getTime();
+
+          const pageDataToSave = {
+            fullUrl: link,
+            pageTitle: title,
+            fullHTML: fullHTML,
+            cleanHTML: cleanHTML,
+            contentType: "rss-feed-item",
+            createdWhen: createdWhen,
+            sourceApplication: "RSS",
+            creatorId: creatorId,
+          };
+
+          saveAndIndexFeedPages(
+            sourcesDB,
+            pageDataToSave,
+            embedTextFunction,
+            allTables,
+            entityExtractionFunction
+          );
+        }
+        page++;
+      }
     }
+
+    try {
+      const sql = `INSERT OR REPLACE INTO rssSourcesTable VALUES (?, ?, ?, ?)`;
+      sourcesDB.run(sql, [
+        feedDataToSave.feedUrl,
+        feedDataToSave.feedTitle,
+        type,
+        Date.now(),
+      ]);
+    } catch (error) {
+      console.log("Feed Already Saved");
+      return;
+    }
+
+    return true;
   } catch (error) {
     console.log("error indexing rss feed", error);
     return false;
   }
-
-  // TODOS
-
-  // add the RSS feed source to the cron job
-
-  // index the RSS feed source and set the last indexed date to now
 }
 
-module.exports = { addRSSFeedSource, getAllRSSSources };
+// TODOS
+
+// add the RSS feed source to the cron job
+
+// index the RSS feed source and set the last indexed date to now
+
+async function saveAndIndexFeedPages(
+  sourcesDB,
+  pageDataToSave,
+  embedTextFunction,
+  allTables,
+  entityExtractionFunction
+) {
+  try {
+    await sourcesDB.run(
+      `INSERT INTO webPagesTable VALUES(?, ?, ?, ?, ?, ?, ?, ? )`,
+      [
+        pageDataToSave.fullUrl,
+        pageDataToSave.pageTitle,
+        pageDataToSave.cleanHTML,
+        pageDataToSave.contentType,
+        pageDataToSave.createdWhen,
+        pageDataToSave.sourceApplication,
+        pageDataToSave.creatorId,
+        pageDataToSave.metaDataJSON,
+      ]
+    );
+  } catch (error) {
+    console.log(("Page Already Saved: ", error));
+    return;
+  }
+
+  try {
+    await indexDocument(
+      pageDataToSave.fullUrl,
+      pageDataToSave.pageTitle,
+      pageDataToSave.cleanHTML,
+      "",
+      "rss-feed-item",
+      "RSS",
+      "",
+      embedTextFunction,
+      allTables,
+      entityExtractionFunction
+    );
+  } catch (error) {
+    console.log("Error indexing:", error);
+  }
+}
+
+module.exports = { addFeedSource, getAllRSSSources };
 
 // export async function indexRSSfeed(feedData) {
 //   const isExisting = null; // fetch local database entry and see if there is one already

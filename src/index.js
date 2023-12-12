@@ -9,11 +9,13 @@ const {
   nativeImage,
   dialog,
 } = electron;
+const xml2js = require("xml2js");
 const autoUpdater = require("electron-updater").autoUpdater;
 const Store = require("electron-store");
 const crypto2 = require("crypto");
 
 const sqlite3 = require("sqlite3").verbose();
+const { AsyncDatabase } = require("promised-sqlite3");
 
 const log = require("electron-log");
 const lancedb = require("vectordb");
@@ -31,12 +33,12 @@ const store = new Store();
 let tray = null;
 const EXPRESS_PORT = 11922; // Different from common React port 3000 to avoid conflicts
 let expressApp = express();
-expressApp.use(cors());
+expressApp.use(cors({ origin: "*" }));
 
 const { indexDocument } = require("./indexing_pipeline/index.js");
 const { findSimilar } = require("./search/find_similar.js");
 const {
-  addRSSFeedSource,
+  addFeedSource,
   getAllRSSSources,
 } = require("./indexing_pipeline/rssFeeds/index.js");
 // VectorTable settings
@@ -57,8 +59,10 @@ let modelPipeline;
 let modelEnvironment;
 
 // embedding functions
-let generateEmbeddings;
 let embedTextFunction;
+let generateEmbeddings;
+let extractEntities;
+let entityExtractionFunction;
 
 ////////////////////////////////
 /// ELECTRON APP BASIC SETUP ///
@@ -106,6 +110,34 @@ expressApp.get("/echo", (req, res) => {
 
 // Example route 3other functionality you want to add
 var server = null;
+
+async function initializeDatabase() {
+  const dbPath = "./data/sourcesDB.db";
+  if (!fs.existsSync(dbPath)) {
+    sourcesDB = await AsyncDatabase.open(dbPath);
+
+    // db = await new sqlite3.Database(
+    //   dbPath,
+    //   sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE,
+    //   (err) => {
+    //     if (err) {
+    //       console.error("Error creating the sourcesDB DB", err);
+    //     }
+    //   }
+    // );
+  } else {
+    sourcesDB = await AsyncDatabase.open(dbPath);
+    // sourcesDB = await new sqlite3.Database(
+    //   dbPath,
+    //   sqlite3.OPEN_READWRITE,
+    //   (err) => {
+    //     if (err) {
+    //       console.error("Error opening the sourcesDB DB", err);
+    //     }
+    //   }
+    // );
+  }
+}
 
 function startExpress() {
   if (!server || !server.listening) {
@@ -161,7 +193,7 @@ function decrypt(text) {
 }
 
 function checkSyncKey(inputKey) {
-  return true;
+  console.log("inputKey", inputKey);
   var store = new Store();
   var storedKey = store.get("syncKey");
 
@@ -248,6 +280,76 @@ app.on("before-quit", async function() {
 });
 
 app.on("ready", async () => {
+  await initializeDatabase();
+  // create Tables
+  createRSSsourcesTable = `CREATE TABLE IF NOT EXISTS rssSourcesTable(feedUrl STRING PRIMARY KEY, feedTitle STRING, type STRING, lastSynced INTEGER)`;
+  createWebPagesTable = `CREATE TABLE IF NOT EXISTS webPagesTable(fullUrl STRING PRIMARY KEY, pageTitle STRING, fullHTML STRING, contentType STRING, createdWhen INTEGER, sourceApplication STRING, creatorId STRING, metaDataJSON STRING)`;
+
+  createAnnotationsTable = `CREATE TABLE IF NOT EXISTS annotationsTable(fullUrl STRING PRIMARY KEY, pageTitle STRING, fullHTML STRING, contentType STRING, createdWhen INTEGER, sourceApplication STRING, creatorId STRING)`;
+
+  sourcesDB.run(createRSSsourcesTable, function(err) {
+    if (err) {
+      console.log("err", err);
+    }
+  });
+  sourcesDB.run(createWebPagesTable, function(err) {
+    if (err) {
+      console.log("err", err);
+    }
+  });
+  sourcesDB.run(createAnnotationsTable, function(err) {
+    if (err) {
+      console.log("err", err);
+    }
+  });
+
+  let vectorDB = await lancedb.connect(vectorDBuri);
+  try {
+    try {
+      vectorDocsTable = await vectorDB.openTable(vectorDocsTableName);
+    } catch {
+      if (vectorDocsTable == null) {
+        function generateZeroVector(size) {
+          return new Array(size).fill(0);
+        }
+
+        let defaultVectorDocument = {
+          fullurl: "null",
+          pagetitle: "null",
+          sourceapplication: "null",
+          createdwhen: 0,
+          creatorid: "null",
+          contenttype: "null",
+          contenttext: "null",
+          entities: "null",
+          vector: generateZeroVector(768),
+        };
+
+        vectorDocsTable = await vectorDB.createTable(vectorDocsTableName, [
+          defaultVectorDocument,
+        ]);
+      }
+    }
+
+    if ((await vectorDocsTable.countRows()) === 0) {
+      vectorDocsTable.add([defaultVectorDocument]);
+    }
+  } catch (error) {
+    console.log("error", error);
+  }
+
+  // sourcesDB.run(
+  //   `CREATE INDEX IF NOT EXISTS entitiesIndex ON webPagesTable(entities)`,
+  //   function(err) {
+  //     if (err) {
+  //       console.log("err", err);
+  //     }
+  //   }
+  // );
+  allTables = {
+    sourcesDB: sourcesDB,
+    vectorDocsTable: vectorDocsTable,
+  };
   try {
     startExpress(); // Start Express server first
 
@@ -341,106 +443,47 @@ app.on("ready", async () => {
     app.quit();
   }
 
-  // prepare model, needs to be on highest level to be consistent in chunking size for vectors
+  //general setup of model pipeline needs to be on highest level to be consistent in chunking size for vectors
   let { pipeline, env } = await import("@xenova/transformers");
 
   modelPipeline = pipeline;
   modelEnvironment = env;
   modelEnvironment.allowLocalModels = true;
   // modelEnvironment.allowRemoteModels = false;
-  modelEnvironment.localModelPath = "./models/model.onnx";
 
+  // prepare similarity embedding model, needs to be on highest level to be consistent in chunking size for vectors
+  modelEnvironment.localModelPath = "./models/all-mpnet-base-v2_quantized.onnx";
   generateEmbeddings = await modelPipeline(
     "feature-extraction",
     "Xenova/all-mpnet-base-v2"
   );
 
   embedTextFunction = await generateEmbeddingFromText;
+  ///
+
+  // // prepare NER extraction model, needs to be on highest level to be consistent in chunking size for vectors
+  // // modelEnvironment.allowRemoteModels = false;
+  // modelEnvironment.localModelPath =
+  //   "./models/bert-base-multilingual-cased-ner-hrl_quantized.onnx";
+
+  // extractEntities = await modelPipeline(
+  //   "token-classification",
+  //   "Xenova/bert-base-multilingual-cased-ner-hrl"
+  // );
+
+  // entityExtractionFunction = await extractEntitiesFromText;
+
+  // console.log(
+  //   await entityExtractionFunction(
+  //     "To wean their country off imported oil and gas, and in the hope of retiring dirty coal-fired power stations, China’s leaders have poured money into wind and solar energy. But they are also turning to one of the most sustainable forms of non-renewable power. Over the past decade China has added 37 nuclear reactors, for a total of 55, according to the International Atomic Energy Agency, a UN body. During that same period America, which leads the world with 93 reactors, added two."
+  //   )
+  // );
+
+  // entityExtractionFunction(
+  //   "In 1945, to wean their country off imported oil and gas, and in the hope of retiring dirty coal-fired power stations, China’s leaders and in particular Xi Xinping and John malcovich have poured money into wind and solar energy and using chemical substances like H20 and co2. But they are also turning to one of the most sustainable forms of non-renewable power. Over the past decade China has added 37 nuclear reactors, for a total of 55, according to the International Atomic Energy Agency, a UN body. During that same period America, which leads the world with 93 reactors, added two."
+  // );
 
   // setting up all databases and tables
-
-  const dbPath = "./data/sourcesDB.db";
-
-  if (!fs.existsSync(dbPath)) {
-    var sourcesDB = new sqlite3.Database(
-      dbPath,
-      sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE,
-      (err) => {
-        if (err) {
-          console.error("Error creating the sourcesDB DB", err);
-        }
-      }
-    );
-  } else {
-    var sourcesDB = new sqlite3.Database(
-      dbPath,
-      sqlite3.OPEN_READWRITE,
-      (err) => {
-        if (err) {
-          console.error("Error opening the sourcesDB DB", err);
-        }
-      }
-    );
-  }
-
-  // create Tables
-  createRSSsourcesTable = `CREATE TABLE IF NOT EXISTS rssSourcesTable(feedUrl STRING PRIMARY KEY, feedTitle STRING, isSubstack BOOLEAN, lastIndexed INTEGER)`;
-  createWebPagesTable = `CREATE TABLE IF NOT EXISTS webPagesTable(fullUrl STRING PRIMARY KEY, createdWhen INTEGER, pageTitle STRING, fullHTML STRING, sourceApplication STRING, creatorId STRING)`;
-  createAnnotationsTable = `CREATE TABLE IF NOT EXISTS annotationsTable(fullUrl STRING PRIMARY KEY, pageTitle STRING, fullHTML STRING, contentType STRING, createdWhen INTEGER, sourceApplication STRING, creatorId STRING)`;
-
-  sourcesDB.run(createRSSsourcesTable, function(err) {
-    if (err) {
-      console.log("err", err);
-    }
-  });
-  sourcesDB.run(createWebPagesTable, function(err) {
-    if (err) {
-      console.log("err", err);
-    }
-  });
-  sourcesDB.run(createAnnotationsTable, function(err) {
-    if (err) {
-      console.log("err", err);
-    }
-  });
-
-  let vectorDB = await lancedb.connect(vectorDBuri);
-  try {
-    try {
-      vectorDocsTable = await vectorDB.openTable(vectorDocsTableName);
-    } catch {
-      if (vectorDocsTable == null) {
-        function generateZeroVector(size) {
-          return new Array(size).fill(0);
-        }
-
-        let defaultVectorDocument = {
-          fullurl: "null",
-          pagetitle: "null",
-          sourceapplication: "null",
-          createdwhen: 0,
-          creatorid: "null",
-          contenttype: "null",
-          contenttext: "null",
-          vector: generateZeroVector(768),
-        };
-
-        vectorDocsTable = await vectorDB.createTable(vectorDocsTableName, [
-          defaultVectorDocument,
-        ]);
-      }
-    }
-
-    if ((await vectorDocsTable.countRows()) === 0) {
-      vectorDocsTable.add([defaultVectorDocument]);
-    }
-  } catch (error) {
-    console.log("error", error);
-  }
-  allTables = {
-    sourcesDB: sourcesDB,
-    vectorDocsTable: vectorDocsTable,
-  };
 });
 
 async function generateEmbeddingFromText(text2embed) {
@@ -448,6 +491,10 @@ async function generateEmbeddingFromText(text2embed) {
     pooling: "mean",
     normalize: true,
   });
+}
+
+async function extractEntitiesFromText(text2analzye) {
+  return await extractEntities(text2analzye);
 }
 
 app.on("activate", function() {
@@ -470,6 +517,9 @@ function isPathComponentValid(component) {
 /////////////////////////
 
 expressApp.put("/add_page", async function(req, res) {
+  if (!checkSyncKey(req.body.syncKey)) {
+    return res.status(403).send("Only one app instance allowed");
+  }
   var fullUrl = req.body.fullUrl;
   var pageTitle = req.body.pageTitle;
   var fullHTML = req.body.fullHTML;
@@ -477,29 +527,22 @@ expressApp.put("/add_page", async function(req, res) {
   var contentType = req.body.contentType;
   var creatorId = req.body.creatorId;
   var sourceApplication = req.body.sourceApplication;
+  var metadataJSON = "";
 
   try {
-    await new Promise((resolve, reject) => {
-      allTables.sourcesDB.run(
-        `INSERT INTO webPagesTable VALUES(?, ?, ?, ?, ?, ?, ?)`,
-        [
-          fullUrl,
-          pageTitle,
-          fullHTML,
-          contentType,
-          createdWhen,
-          sourceApplication,
-          creatorId,
-        ],
-        function(err) {
-          if (err) {
-            console.log("err", err); // 'statement' failed: UNIQUE constraint failed: pagesTable._id
-            return reject(err);
-          }
-          resolve();
-        }
-      );
-    });
+    await allTables.sourcesDB.run(
+      `INSERT INTO webPagesTable VALUES(?, ?, ?, ?, ?, ?, ?, ? )`,
+      [
+        fullUrl,
+        pageTitle,
+        fullHTML,
+        contentType,
+        createdWhen,
+        sourceApplication,
+        creatorId,
+        metadataJSON,
+      ]
+    );
 
     await indexDocument(
       fullUrl,
@@ -510,7 +553,8 @@ expressApp.put("/add_page", async function(req, res) {
       sourceApplication,
       creatorId,
       embedTextFunction,
-      allTables
+      allTables,
+      entityExtractionFunction
     );
     return res.status(200).send(true);
   } catch (error) {
@@ -520,36 +564,30 @@ expressApp.put("/add_page", async function(req, res) {
 });
 
 expressApp.put("/add_annotation", async function(req, res) {
-  var fullUrl = req.body.fullUrl;
-  var pageTitle = req.body.pageTitle;
-  var fullHTML = req.body.fullHTML;
-  var createdWhen = req.body.createdWhen;
-  var contentType = req.body.contentType;
-  var creatorId = req.body.creatorId;
-  var sourceApplication = req.body.sourceApplication;
+  if (!checkSyncKey(req.body.syncKey)) {
+    return res.status(403).send("Only one app instance allowed");
+  }
+  var fullUrl = req.body?.fullUrl || "";
+  var pageTitle = req.body?.pageTitle || "";
+  var fullHTML = req.body?.fullHTML || "";
+  var createdWhen = req.body?.createdWhen || "";
+  var contentType = req.body?.contentType || "";
+  var creatorId = req.body?.creatorId || "";
+  var sourceApplication = req.body?.sourceApplication || "";
 
   try {
-    await new Promise((resolve, reject) => {
-      allTables.sourcesDB.run(
-        `INSERT INTO annotationsTable VALUES(?, ?, ?, ?, ?, ?, ?)`,
-        [
-          fullUrl,
-          pageTitle,
-          fullHTML,
-          contentType,
-          createdWhen,
-          sourceApplication,
-          creatorId,
-        ],
-        function(err) {
-          if (err) {
-            console.log("err", err); // 'statement' failed: UNIQUE constraint failed: pagesTable._id
-            return reject(err);
-          }
-          resolve();
-        }
-      );
-    });
+    await sourcesDB.run(
+      `INSERT INTO annotationsTable VALUES(?, ?, ?, ?, ?, ?, ?)`,
+      [
+        fullUrl,
+        pageTitle,
+        fullHTML,
+        contentType,
+        createdWhen,
+        sourceApplication,
+        creatorId,
+      ]
+    );
 
     await indexDocument(
       fullUrl,
@@ -560,35 +598,128 @@ expressApp.put("/add_annotation", async function(req, res) {
       sourceApplication,
       creatorId,
       embedTextFunction,
-      allTables
+      allTables,
+      entityExtractionFunction
     );
     return res.status(200).send(true);
   } catch (error) {
-    log.error("Error in /index_document", error);
+    log.error("Error in /index_annotation", error);
     return res.status(500).json({ error: "Internal server error" });
   }
   // return await indexAnnotation(req);
 });
 
 expressApp.post("/get_similar", async function(req, res) {
-  return await findSimilar(req, res, embedTextFunction, allTables);
+  if (!checkSyncKey(req.body.syncKey)) {
+    return res.status(403).send("Only one app instance allowed");
+  }
+  console.log("get_similar");
+  return await findSimilar(
+    req,
+    res,
+    embedTextFunction,
+    allTables,
+    entityExtractionFunction
+  );
+});
+expressApp.post("/load_feed_sources", async function(req, res) {
+  if (!checkSyncKey(req.body.syncKey)) {
+    return res.status(403).send("Only one app instance allowed");
+  }
+  try {
+    const sourcesList = await allTables.sourcesDB.all(
+      `SELECT * FROM rssSourcesTable`
+    );
+
+    //  , function(err, rows) {
+    //   if (err) {
+    //     console.error(err);
+    //     rturn;
+    //   }
+
+    //   console.log("rows", rows);
+    const feedSourcesOutput = sourcesList.map((source) => ({
+      feedUrl: source.feedUrl,
+      feedTitle: source.feedTitle,
+      feedFavIcon: source.feedFavIcon,
+      type: source.type,
+    }));
+
+    console.log("feedSources", feedSourcesOutput);
+    return res.status(200).send(feedSourcesOutput);
+  } catch (error) {
+    console.log(`Error loading feed sources in /load_feed_sources`, error);
+    return res.status(500).json({ error: error });
+  }
 });
 
-expressApp.post("/add_rss_feed_source", async function(req, res) {
-  const feedUrl = req.body.feedUrl;
-  const isSubstack = req.body.isSubstack;
+expressApp.post("/add_feed_source", async function(req, res) {
+  if (!checkSyncKey(req.body.syncKey)) {
+    return res.status(403).send("Only one app instance allowed");
+  }
+  const feedSources = req.body.feedSources;
 
   // logic for how RSS feed is added to the database, and the cron job is set up
   try {
-    await addRSSFeedSource(feedUrl, embedTextFunction, allTables, isSubstack);
+    for (let i = 0; i < feedSources.length; i++) {
+      const feedUrl = feedSources[i]?.feedUrl;
+      let feedTitle = feedSources[i]?.feedTitle;
+      const type = feedSources[i]?.type;
+
+      if (!feedTitle) {
+        console.log("feeurl", feedUrl);
+        const response = await fetch(feedUrl);
+        const data = await response.text();
+        const parser = new xml2js.Parser();
+        let parsedData;
+
+        parser.parseString(data, function(err, result) {
+          if (err) {
+            console.error("Failed to parse RSS feed: ", err);
+          } else {
+            parsedData = result.rss.channel[0];
+          }
+        });
+
+        feedTitle = parsedData?.title[0] ?? "";
+      }
+
+      if (feedUrl && feedTitle) {
+        try {
+          const sql = `INSERT OR REPLACE INTO rssSourcesTable VALUES (?, ?, ?, ?)`;
+          sourcesDB.run(sql, [feedUrl, feedTitle, type || null, null]);
+        } catch (error) {
+          console.log("Error saving feed");
+          return;
+        }
+      }
+    }
+
+    for (let i = 0; i < feedSources.length; i++) {
+      const feedUrl = feedSources[i]?.feedUrl;
+      const feedTitle = feedSources[i]?.feedTitle ?? "";
+      const type = feedSources[i]?.type ?? "";
+
+      await addFeedSource(
+        feedUrl,
+        feedTitle,
+        embedTextFunction,
+        allTables,
+        type,
+        entityExtractionFunction
+      );
+    }
     return res.status(200).send(true);
   } catch (error) {
-    log.error(`Error adding ${feedUrl} in /add_rss_feed`, error);
+    log.error(`Error adding feed sources in /add_rss_feed`, error);
     return res.status(500).json({ error: error });
   }
 });
 
 expressApp.get("/get_all_rss_sources", async function(req, res) {
+  if (!checkSyncKey(req.body.syncKey)) {
+    return res.status(403).send("Only one app instance allowed");
+  }
   // logic for how RSS feed is added to the database, and the cron job is set up
 
   try {
@@ -608,8 +739,7 @@ expressApp.put("/remove_rss_feed", async function(req, res) {
 
 expressApp.post("/set-directory", async function(req, res) {
   if (!checkSyncKey(req.body.syncKey)) {
-    res.status(404);
-    return;
+    return res.status(403).send("Only one app instance allowed");
   }
   let directoryPath;
   let pkmSyncType;
@@ -639,8 +769,7 @@ expressApp.post("/set-directory", async function(req, res) {
 
 expressApp.put("/update-file", async function(req, res) {
   if (!checkSyncKey(req.body.syncKey)) {
-    res.status(404);
-    return;
+    return res.status(403).send("Only one app instance allowed");
   }
   try {
     var body = req.body;
@@ -678,8 +807,7 @@ expressApp.put("/update-file", async function(req, res) {
 
 expressApp.post("/get-file-content", async function(req, res) {
   if (!checkSyncKey(req.body.syncKey)) {
-    res.status(404);
-    return;
+    return res.status(403).send("Only one app instance allowed");
   }
   try {
     var pkmSyncType = req.body.pkmSyncType;
@@ -720,14 +848,17 @@ expressApp.post("/get-file-content", async function(req, res) {
 
 let backupPath = "";
 
-expressApp.get("/status", (req, res) => {
+expressApp.post("/status", (req, res) => {
+  console.log(" /status called");
+  if (!checkSyncKey(req.body.syncKey)) {
+    return res.status(403).send("Only one app instance allowed");
+  }
   res.status(200).send("running");
 });
 
 expressApp.post("/pick-directory", (req, res) => {
   if (!checkSyncKey(req.body.syncKey)) {
-    res.status(404);
-    return;
+    return res.status(403).send("Only one app instance allowed");
   }
   try {
     var directoryPath = pickDirectory("backup");
@@ -746,7 +877,7 @@ expressApp.post("/pick-directory", (req, res) => {
 // get the backup folder location
 expressApp.get("/backup/location", async (req, res) => {
   if (!checkSyncKey(req.body.syncKey)) {
-    res.status(500);
+    res.status(403);
   } else {
     let backupPath = store.get("backupPath");
     if (!backupPath) {
@@ -759,8 +890,7 @@ expressApp.get("/backup/location", async (req, res) => {
 
 expressApp.get("/backup/start-change-location", async (req, res) => {
   if (!checkSyncKey(req.body.syncKey)) {
-    res.status(404);
-    return;
+    return res.status(403).send("Only one app instance allowed");
   }
   res.status(200).send(await pickDirectory("backup"));
 });
@@ -768,8 +898,7 @@ expressApp.get("/backup/start-change-location", async (req, res) => {
 // listing files
 expressApp.get("/backup/:collection", (req, res) => {
   if (!checkSyncKey(req.body.syncKey)) {
-    res.status(404);
-    return;
+    return res.status(403).send("Only one app instance allowed");
   }
   var collection = req.params.collection;
   if (!isPathComponentValid(collection)) {
@@ -795,8 +924,7 @@ expressApp.get("/backup/:collection", (req, res) => {
 // getting files
 expressApp.get("/backup/:collection/:timestamp", (req, res) => {
   if (!checkSyncKey(req.body.syncKey)) {
-    res.status(404);
-    return;
+    return res.status(403).send("Only one app instance allowed");
   }
   var filename = req.params.timestamp;
   if (!isPathComponentValid(filename)) {
@@ -808,7 +936,7 @@ expressApp.get("/backup/:collection/:timestamp", (req, res) => {
     return res.status(400).send("Malformed collection parameter");
   }
 
-  var filepath = backupPath + `/backup/${collection}/` + filename;
+  var filepath = backupPath + `/backup/${collection}/` + filename + ".json";
   try {
     res.status(200).send(fs.readFileSync(filepath, "utf-8"));
   } catch (err) {
@@ -821,8 +949,7 @@ expressApp.get("/backup/:collection/:timestamp", (req, res) => {
 
 expressApp.put("/backup/:collection/:timestamp", async (req, res) => {
   if (!checkSyncKey(req.body.syncKey)) {
-    res.status(500);
-    return;
+    return res.status(403).send("Only one app instance allowed");
   }
   var filename = req.params.timestamp;
   if (!isPathComponentValid(filename)) {

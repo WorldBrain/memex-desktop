@@ -1,56 +1,45 @@
 const log = require("electron-log");
 
-async function findSimilar(req, res, embedTextFunction, allTables) {
+const { extractEntitiesFromText } = require("../indexing_pipeline/utils.js");
+
+async function findSimilar(
+  req,
+  res,
+  embedTextFunction,
+  allTables,
+  entityExtractionFunction
+) {
   try {
-    console.log("arrives", req.body);
     // var vectorQuery = await embedContent(preparedContentText);
+    // const entities = await extractEntitiesFromText(
+    //   req.body.contentText,
+    //   entityExtractionFunction
+    // );
+    // const embeddedChunk = await embedTextFunction(entities.join(" "));
     const embeddedChunk = await embedTextFunction(req.body.contentText);
     const vectors = embeddedChunk[0].data;
 
     const vectorDocsTable = allTables.vectorDocsTable;
 
+    // console.log("searched entities", entities);
+
     var result = await vectorDocsTable
       .search(Array.from(vectors))
-      .metricType("L2")
+      // .metricType("L2")
       .where(`fullurl != '${req.body.fullUrl}' AND createdwhen != 0`)
       .limit(30)
       .execute();
 
-    var filteredResult = result
-      .reduce(function(acc, current) {
-        var x = acc.find(function(item) {
-          console.log(
-            "item",
-            item.fullurl === current.fullurl,
-            item.contenttype
-          );
-          return (
-            item.fullurl === current.fullurl // only take one instance of a page result
-            // (item.contenttype === "page" ||
-            //   item.contenttype === "rss-feed-item")
-          );
-        });
-
-        if (current.contenttype === "annotation") {
-          console.log("current", current); // don't return annotations on the current page
-          var splitUrl = current.fullurl?.split("/#");
-          if (splitUrl[0] === req.body.fullUrl) {
-            return acc;
-          }
+    let filteredResult = result.filter((item) => {
+      if (item.contenttype === "annotation") {
+        // don't return annotations on the current page
+        var splitUrl = item.fullurl?.split("/#");
+        if (splitUrl[0] === req.body.fullUrl) {
+          return false;
         }
-        if (!x) {
-          return acc.concat([current]);
-        } else {
-          if (x._distance > current._distance) {
-            var index = acc.indexOf(x);
-            acc[index] = current;
-          }
-          return acc;
-        }
-      }, [])
-      .filter(function(item) {
-        return item._distance < 2;
-      });
+      }
+      return item._distance < 1.25 && item.fullurl !== "null";
+    });
 
     filteredResult = filteredResult.map(function(item) {
       return {
@@ -62,8 +51,11 @@ async function findSimilar(req, res, embedTextFunction, allTables) {
         sourceApplication: item.sourceApplication,
         creatorId: item.creatorid,
         distance: item._distance,
+        entities: item.entities,
       };
     });
+
+    console.log("filteredResult", filteredResult);
 
     return res.status(200).send(filteredResult);
   } catch (error) {

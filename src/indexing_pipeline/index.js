@@ -1,4 +1,7 @@
-const { splitContentInReasonableChunks } = require("./utils.js");
+const {
+  splitContentInReasonableChunks,
+  extractEntitiesFromText,
+} = require("./utils.js");
 const log = require("electron-log");
 
 async function indexDocument(
@@ -10,7 +13,8 @@ async function indexDocument(
   sourceApplicationInput,
   creatorIdInput,
   embedTextFunction,
-  allTables
+  allTables,
+  entityExtractionFunction
 ) {
   let fullUrl = fullUrlInput || "";
   let pageTitle = pageTitleInput || "";
@@ -20,6 +24,7 @@ async function indexDocument(
   let sourceApplication = sourceApplicationInput || "";
   let fullHTML = fullHTMLInput || "";
 
+  console.log("indexing url: ", fullUrl);
   try {
     if (!fullHTML) {
       try {
@@ -33,8 +38,17 @@ async function indexDocument(
     contentChunks = await splitContentInReasonableChunks(fullHTML);
 
     let promises = [];
-    for (var chunk of contentChunks) {
-      const embeddedChunk = await embedTextFunction(chunk);
+    const entities = [];
+
+    const chunksToWrite = [];
+    for (let chunk of contentChunks) {
+      // const entitiesForChunk = await extractEntitiesFromText(
+      //   pageTitle + chunk,
+      //   entityExtractionFunction
+      // );
+
+      // const embeddedChunk = await embedTextFunction(entitiesForChunk);
+      const embeddedChunk = await embedTextFunction(pageTitle + chunk);
       const vectors = embeddedChunk[0].data;
 
       var documentToIndex = {
@@ -45,24 +59,44 @@ async function indexDocument(
         creatorid: creatorId || "",
         contenttype: contentType || "",
         contenttext: chunk,
+        // entities: JSON.stringify(entitiesForChunk),
+        entities: "",
         vector: Array.from(vectors),
       };
 
-      console.log("documentToIndex", documentToIndex);
+      // console.log("documentToIndex", {
+      //   fullurl: documentToIndex.fullurl,
+      //   pagetitle: documentToIndex.pagetitle,
+      //   sourceapplication: documentToIndex.sourceapplication,
+      //   createdwhen: documentToIndex.createdwhen,
+      //   creatorid: documentToIndex.creatorid,
+      //   contenttype: documentToIndex.contenttype,
+      //   contenttext: documentToIndex.contenttext,
+      //   entities: documentToIndex.entities,
+      // });
 
-      const vectorDocsTable = allTables.vectorDocsTable;
-      if (vectorDocsTable) {
-        promises.push(vectorDocsTable.add([documentToIndex]));
-      }
+      chunksToWrite.push(documentToIndex);
     }
-    for (const promise of promises) {
-      try {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        await promise;
-      } catch (error) {
-        console.error("An error occurred:", error);
-      }
+    const vectorDocsTable = allTables.vectorDocsTable;
+    if (vectorDocsTable) {
+      await vectorDocsTable.add(chunksToWrite);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await vectorDocsTable.cleanupOldVersions(1);
     }
+    // for (const promise of updatePromises) {
+    //   try {
+    //     await new Promise((resolve) => setTimeout(resolve, 100));
+    //     await promise;
+    //   } catch (error) {
+    //     console.error("An error occurred:", error);
+    //   }
+    // }
+
+    // await allTables.sourcesDB.run(
+    //   `UPDATE webPagesTable SET entities = ? WHERE fullUrl = ?`,
+    //   [JSON.stringify(entities), fullUrl]
+    // );
+
     return true;
   } catch (error) {
     console.log("error", error);
