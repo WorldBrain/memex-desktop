@@ -683,6 +683,8 @@ expressApp.post("/add_feed_source", async function(req, res) {
   const feedSources = req.body.feedSources;
   feedSourceQueue = [...feedSourceQueue, ...feedSources];
 
+  console.log("feedSourceQueue", feedSourceQueue);
+
   // logic for how RSS feed is added to the database, and the cron job is set up
   try {
     for (let i = 0; i < feedSources.length; i++) {
@@ -723,7 +725,8 @@ expressApp.post("/add_feed_source", async function(req, res) {
     const processFeedSource = async () => {
       if (feedSourceQueue.length === 0) return;
 
-      const { feedUrl, feedTitle = "", type = "" } = feedSourceQueue.shift();
+      const feedSource = feedSourceQueue[0];
+      const { feedUrl, feedTitle = "", type = "" } = feedSource;
 
       await addFeedSource(
         feedUrl,
@@ -732,7 +735,9 @@ expressApp.post("/add_feed_source", async function(req, res) {
         allTables,
         type,
         entityExtractionFunction
-      );
+      ).then(() => {
+        feedSourceQueue.shift();
+      });
 
       // Process the next feed source in the queue
       processFeedSource();
