@@ -90,7 +90,6 @@ async function addFeedSource(
 
     if (isSubstack) {
       console.log("Substack feed detected");
-      let year = 2023;
       let links = [];
       let fetchedAllHistory = false;
 
@@ -126,23 +125,39 @@ async function addFeedSource(
         feedDataToSave.feedTitle = parsedData.title[0];
       }
 
-      while (!fetchedAllHistory) {
-        const urlToFetch = `${feedUrl.replace("/feed", "")}/sitemap/${year}`;
-        const response = await fetch(urlToFetch);
-        if (response.status === 404) {
-          fetchedAllHistory = true;
-        }
-        const text = await response.text();
-        const $ = cheerio.load(text);
-        const anchors = $("a");
+      const allSiteMapPages = [];
+      const urlToFetch = `${feedUrl.replace("/feed", "/sitemap")}`;
 
-        anchors.each((i, anchor) => {
-          const href = $(anchor).attr("href");
+      const response = await fetch(urlToFetch);
+      const text = await response.text();
+
+      const $ = cheerio.load(text);
+      const anchors = $("a");
+
+      anchors.each((i, anchor) => {
+        const href = $(anchor).attr("href");
+        if (href.startsWith("/sitemap")) {
+          allSiteMapPages.push(href);
+        }
+      });
+
+      for (let page of allSiteMapPages) {
+        const pageResponse = await fetch(`${feedUrl.replace("/feed", page)}`);
+        const pageText = await pageResponse.text();
+        const $page = cheerio.load(pageText);
+        const pageAnchors = $page("a");
+
+        pageAnchors.each((i, anchor) => {
+          const href = $page(anchor).attr("href");
+          console.log("href", href);
           if (href.startsWith(`${feedUrl.replace("/feed", "")}/p/`)) {
             links.push(href);
           }
         });
-        year--;
+      }
+
+      if (links && links.length === 0) {
+        return;
       }
 
       for (let link of links) {
@@ -291,7 +306,7 @@ async function addFeedSource(
       sourcesDB.run(sql, [
         feedDataToSave.feedUrl,
         feedDataToSave.feedTitle,
-        type,
+        isSubstack ? "substack" : type,
         Date.now(),
       ]);
     } catch (error) {
