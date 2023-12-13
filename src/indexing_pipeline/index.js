@@ -24,8 +24,6 @@ async function indexDocument(
   let sourceApplication = sourceApplicationInput || "";
   let fullHTML = fullHTMLInput || "";
 
-  console.log("indexing url: ", fullUrl);
-  log.log("indexing url: ", fullUrl);
   try {
     if (!fullHTML) {
       try {
@@ -99,9 +97,12 @@ async function indexDocument(
     // );
 
     console.log("Successfully indexed: ", fullUrl);
+    log.log("Successfully indexed: ", fullUrl);
     return true;
   } catch (error) {
     console.log("error", error);
+    console.log("Failure indexing: ", fullUrl, " ", error);
+    log.log("Failure indexed: ", fullUrl, " ", error);
     return false;
   }
 }
