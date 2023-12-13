@@ -1,11 +1,11 @@
 {
-  "name": "memex-local-sync",
-  "productName": "Memex Local Sync Helper",
-  "version": "0.0.4",
+  "name": "memex-desktop",
+  "productName": "Memex Desktop",
+  "version": "0.0.5",
   "description": "Backup and sync to your favorite PKM tools",
-  "main": ".webpack/main",
+  "main": "src/index.js",
   "scripts": {
-    "start": "electron-forge start",
+    "start": "tsc && electron-forge start",
     "package": "electron-forge package",
     "make": "electron-forge make",
     "publish": "electron-forge publish",
@@ -22,15 +22,15 @@
     "build:all": "yarn build:mac:x64 && yarn build:mac:arm64 && yarn build:win:x64 && yarn build:win:ia32 && yarn build:linux:x64 && yarn build:linux:ia32 && yarn build:linux:arm64"
   },
   "build": {
-    "appId": "memex-local-sync",
-    "productName": "Memex-Local-Sync-Helper",
+    "appId": "memex-desktop",
+    "productName": "Memex-Desktop",
     "copyright": "Copyright (c) 2023 Memex.Garden",
     "artifactName": "${productName}-v${version}-${os}-${arch}.${ext}",
     "publish": [
       {
         "provider": "github",
-        "owner": "WorldBrain",
-        "repo": "memex-local-sync"
+        "owner": "worldbrain",
+        "repo": "memex-desktop"
       }
     ],
     "mac": {
@@ -75,7 +75,10 @@
       ]
     },
     "extraResources": [
-      "src/img/tray_icon.png"
+      "src/img/tray_icon.png",
+      "src/models/*",
+      "data/*",
+      "node_modules/@xenova/*"
     ]
   },
   "repository": {
@@ -96,6 +99,7 @@
     "@electron-forge/maker-zip": "^6.4.2",
     "@electron-forge/plugin-auto-unpack-natives": "^6.4.2",
     "@electron-forge/plugin-webpack": "^6.4.2",
+    "@types/mkdirp": "^2.0.0",
     "@typescript-eslint/eslint-plugin": "^5.0.0",
     "@typescript-eslint/parser": "^5.0.0",
     "@vercel/webpack-asset-relocator-loader": "1.7.3",
@@ -108,11 +112,22 @@
     "node-loader": "^2.0.0",
     "style-loader": "^3.0.0",
     "ts-loader": "^9.2.2",
-    "ts-node": "^10.0.0",
-    "typescript": "~4.5.4"
+    "ts-node": "^10.0.0"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.10.2",
+    "@babel/cli": "^7.23.4",
+    "@babel/core": "^7.23.5",
+    "@babel/preset-env": "^7.23.5",
+    "@types/jsdom": "^21.1.6",
+    "@types/turndown": "^5.0.4",
+    "@xenova/transformers": "^2.9.0",
+    "apache-arrow": "^14.0.1",
+    "axios": "^1.6.2",
+    "better-sqlite3": "^9.2.2",
+    "cheerio": "^1.0.0-rc.12",
     "copy-webpack-plugin": "^11.0.0",
+    "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "dotenv-webpack": "^8.0.1",
     "electron-log": "^4.4.8",
@@ -120,6 +135,20 @@
     "electron-squirrel-startup": "^1.0.0",
     "electron-store": "^8.1.0",
     "electron-updater": "^6.1.4",
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "jsdom": "^23.0.0",
+    "mkdirp": "^3.0.1",
+    "node-fetch": "^3.3.2",
+    "openai": "^4.20.0",
+    "promised-sqlite3": "^2.1.0",
+    "sqlite": "^5.1.1",
+    "sqlite-vss": "^0.1.2",
+    "sqlite3": "^5.1.6",
+    "stopwords-iso": "^1.1.0",
+    "turndown": "^7.1.2",
+    "vectordb": "^0.3.9",
+    "wink-pos-tagger": "^2.2.2",
+    "xml2js": "^0.6.2",
+    "yarn": "^1.22.21"
   }
 }

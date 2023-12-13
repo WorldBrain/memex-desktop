@@ -14,6 +14,10 @@ export const mainConfig: Configuration = {
   },
   resolve: {
     extensions: ['.js', '.ts', '.jsx', '.tsx', '.css', '.json'],
+    alias: {
+      "sharp$": false,
+      "onnxruntime-node$": false,
+    },
   },
   plugins: [
     new CopyWebpackPlugin({
