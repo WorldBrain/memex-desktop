@@ -28,17 +28,6 @@ async function addFeedSource(
     const sourcesDB = allTables.sourcesDB;
     feedTitle = feedTitle;
 
-    // prepare Substack link structure
-    const isSubstack =
-      feedUrl.includes(".substack.com/") || type === "substack";
-
-    let feedURLprocessed = feedUrl;
-
-    if (isSubstack && !feedURLprocessed.endsWith("/feed")) {
-      const url = new URL(feedUrl);
-      feedURLprocessed = `${url.protocol}//${url.host}/feed`;
-    }
-
     // check if feed entry already exists
     let existingEndpoint;
     try {
@@ -46,7 +35,9 @@ async function addFeedSource(
         `SELECT * FROM rssSourcesTable WHERE feedUrl = ? AND lastSynced IS NOT NULL`,
         [feedUrl]
       );
-    } catch (error) {}
+    } catch (error) {
+      log.error("Error checking existing endpoint");
+    }
 
     if (existingEndpoint) {
       console.log("Feed Already Saved");
@@ -60,10 +51,45 @@ async function addFeedSource(
       // feedDescription: feedDescription,
       lastSynced: null,
     };
-
     let feedData;
 
+    // prepare Substack link structure
+    let isSubstack = feedUrl.includes(".substack.com/") || type === "substack";
+
+    let feedURLprocessed = feedUrl;
+
+    if (isSubstack && !feedURLprocessed.endsWith("/feed")) {
+      const url = new URL(feedUrl);
+      feedURLprocessed = `${url.protocol}//${url.host}/feed`;
+    }
+
+    if (!isSubstack) {
+      try {
+        const response = await fetch(feedUrl);
+        const htmlContent = await response.text();
+        const parser = new xml2js.Parser();
+        let parsedData;
+
+        parser.parseString(htmlContent, function(err, result) {
+          if (err) {
+            console.error("Failed to parse HTML content: ", err);
+          } else {
+            parsedData = result.rss.channel[0];
+            const imageUrl = parsedData.image[0].url[0];
+            if (imageUrl.startsWith("https://substackcdn.com")) {
+              console.log("isSubstack");
+              isSubstack = true;
+            }
+          }
+        });
+      } catch (error) {
+        console.error("Failed to fetch and parse feed URL: ", error);
+        return;
+      }
+    }
+
     if (isSubstack) {
+      console.log("Substack feed detected");
       let year = 2023;
       let links = [];
       let fetchedAllHistory = false;

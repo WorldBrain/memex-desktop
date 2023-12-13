@@ -9,6 +9,7 @@ const {
   nativeImage,
   dialog,
 } = electron;
+const isPackaged = app.isPackaged;
 const xml2js = require("xml2js");
 const autoUpdater = require("electron-updater").autoUpdater;
 const Store = require("electron-store");
@@ -42,7 +43,9 @@ const {
   getAllRSSSources,
 } = require("./indexing_pipeline/rssFeeds/index.js");
 // VectorTable settings
-let vectorDBuri = path.join(process.resourcesPath, "data/vectorDB");
+let vectorDBuri = isPackaged
+  ? path.join(app.getPath("userData"), "data/vectorDB")
+  : "data/vectorDB";
 let sourcesDB = null;
 let vectorDocsTable = null;
 let vectorDocsTableName = "vectordocstable";
@@ -113,39 +116,29 @@ var server = null;
 
 async function initializeDatabase() {
   let dbPath = null;
-  log.log("paths", process.resourcesPath, __dirname, path.resolve(__dirname));
-  if (process.env.NODE_ENV == null) {
-    dbPath = path.join(process.resourcesPath, "data/sourcesDB.db");
-  } else {
-    dbPath = path.joinpath.join(
-      path.resolve(process.resourcesPath),
-      "data/sourcesDB.db"
-    );
-  }
-  if (!fs.existsSync(dbPath)) {
-    sourcesDB = await AsyncDatabase.open(dbPath);
 
-    // db = await new sqlite3.Database(
-    //   dbPath,
-    //   sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE,
-    //   (err) => {
-    //     if (err) {
-    //       console.error("Error creating the sourcesDB DB", err);
-    //     }
-    //   }
-    // );
+  if (isPackaged) {
+    dbPath = path.join(app.getPath("userData"), "data/sourcesDB.db");
+    log.log("dbPath", app.getPath("userData"));
+    fs.access(
+      app.getPath("userData"),
+      fs.constants.R_OK | fs.constants.W_OK,
+      async (err) => {
+        if (err) {
+          log.error("No access to database file:", err);
+        } else {
+          log.log("Read/Write access is available for the database file");
+          const dir = path.join(app.getPath("userData"), "data");
+          if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+          }
+        }
+      }
+    );
   } else {
-    sourcesDB = await AsyncDatabase.open(dbPath);
-    // sourcesDB = await new sqlite3.Database(
-    //   dbPath,
-    //   sqlite3.OPEN_READWRITE,
-    //   (err) => {
-    //     if (err) {
-    //       console.error("Error opening the sourcesDB DB", err);
-    //     }
-    //   }
-    // );
+    dbPath = "data/sourcesDB.db";
   }
+  sourcesDB = await AsyncDatabase.open(dbPath);
 }
 
 function startExpress() {
@@ -202,14 +195,13 @@ function decrypt(text) {
 }
 
 function checkSyncKey(inputKey) {
-  console.log("inputKey", inputKey);
   var store = new Store();
   var storedKey = store.get("syncKey");
 
   if (!storedKey) {
-    store.set("syncKey", encrypt(inputKey));
+    store.set("syncKey", inputKey);
     return true;
-  } else if (decrypt(storedKey) === inputKey) {
+  } else if (storedKey === inputKey) {
     return true;
   } else {
     return false;
@@ -364,14 +356,11 @@ app.on("ready", async () => {
 
     log.catchErrors();
     let trayIconPath = null;
-
-    log.log("process.env.s", process.env.NODE_ENV);
-    if (process.env.NODE_ENV == null) {
-      trayIconPath = path.join(__dirname, "img/tray_icon.png");
+    if (isPackaged) {
       trayIconPath = path.join(process.resourcesPath, "src/img/tray_icon.png");
     } else {
       trayIconPath = path.join(
-        process.resourcesPath,
+        electron.app.getAppPath(),
         "src",
         "img",
         "tray_icon.png"
@@ -463,7 +452,27 @@ app.on("ready", async () => {
   // modelEnvironment.allowRemoteModels = false;
 
   // prepare similarity embedding model, needs to be on highest level to be consistent in chunking size for vectors
-  modelEnvironment.localModelPath = "./models/all-mpnet-base-v2_quantized.onnx";
+
+  const modelsDir = path.join(app.getPath("userData"), "models");
+  if (!fs.existsSync(modelsDir)) {
+    fs.mkdirSync(modelsDir, { recursive: true });
+  }
+
+  const modelFilePath = path.join(
+    modelsDir,
+    "all-mpnet-base-v2_quantized.onnx"
+  );
+  if (!fs.existsSync(modelFilePath)) {
+    const modelUrl =
+      "https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/onnx/model_quantized.onnx"; // replace with actual URL
+    const response = await fetch(modelUrl);
+    const buffer = await response.arrayBuffer();
+    fs.writeFileSync(modelFilePath, Buffer.from(buffer));
+  }
+
+  modelEnvironment.localModelPath = modelFilePath;
+  console.log(`Model file path: ${modelFilePath}`);
+
   generateEmbeddings = await modelPipeline(
     "feature-extraction",
     "Xenova/all-mpnet-base-v2"
@@ -528,9 +537,9 @@ function isPathComponentValid(component) {
 /////////////////////////
 
 expressApp.put("/add_page", async function(req, res) {
-  if (!checkSyncKey(req.body.syncKey)) {
-    return res.status(403).send("Only one app instance allowed");
-  }
+  // if (!checkSyncKey(req.body.syncKey)) {
+  //   return res.status(403).send("Only one app instance allowed");
+  // }
   var fullUrl = req.body.fullUrl;
   var pageTitle = req.body.pageTitle;
   var fullHTML = req.body.fullHTML;
@@ -575,9 +584,9 @@ expressApp.put("/add_page", async function(req, res) {
 });
 
 expressApp.put("/add_annotation", async function(req, res) {
-  if (!checkSyncKey(req.body.syncKey)) {
-    return res.status(403).send("Only one app instance allowed");
-  }
+  // if (!checkSyncKey(req.body.syncKey)) {
+  //   return res.status(403).send("Only one app instance allowed");
+  // }
   var fullUrl = req.body?.fullUrl || "";
   var pageTitle = req.body?.pageTitle || "";
   var fullHTML = req.body?.fullHTML || "";
@@ -621,9 +630,9 @@ expressApp.put("/add_annotation", async function(req, res) {
 });
 
 expressApp.post("/get_similar", async function(req, res) {
-  if (!checkSyncKey(req.body.syncKey)) {
-    return res.status(403).send("Only one app instance allowed");
-  }
+  // if (!checkSyncKey(req.body.syncKey)) {
+  //   return res.status(403).send("Only one app instance allowed");
+  // }
   console.log("get_similar");
   return await findSimilar(
     req,
@@ -634,9 +643,9 @@ expressApp.post("/get_similar", async function(req, res) {
   );
 });
 expressApp.post("/load_feed_sources", async function(req, res) {
-  if (!checkSyncKey(req.body.syncKey)) {
-    return res.status(403).send("Only one app instance allowed");
-  }
+  // if (!checkSyncKey(req.body.syncKey)) {
+  //   return res.status(403).send("Only one app instance allowed");
+  // }
   try {
     const sourcesList = await allTables.sourcesDB.all(
       `SELECT * FROM rssSourcesTable`
@@ -664,11 +673,15 @@ expressApp.post("/load_feed_sources", async function(req, res) {
   }
 });
 
+let feedSourceQueue = [];
+
 expressApp.post("/add_feed_source", async function(req, res) {
-  if (!checkSyncKey(req.body.syncKey)) {
-    return res.status(403).send("Only one app instance allowed");
-  }
+  log.log("called add_feed_source");
+  // if (!checkSyncKey(req.body.syncKey)) {
+  //   return res.status(403).send("Only one app instance allowed");
+  // }
   const feedSources = req.body.feedSources;
+  feedSourceQueue = [...feedSourceQueue, ...feedSources];
 
   // logic for how RSS feed is added to the database, and the cron job is set up
   try {
@@ -699,17 +712,18 @@ expressApp.post("/add_feed_source", async function(req, res) {
         try {
           const sql = `INSERT OR REPLACE INTO rssSourcesTable VALUES (?, ?, ?, ?)`;
           sourcesDB.run(sql, [feedUrl, feedTitle, type || null, null]);
+          log.log(`Added feed ${feedUrl}`);
         } catch (error) {
-          console.log("Error saving feed");
+          log.error("Error saving feed");
           return;
         }
       }
     }
 
-    for (let i = 0; i < feedSources.length; i++) {
-      const feedUrl = feedSources[i]?.feedUrl;
-      const feedTitle = feedSources[i]?.feedTitle ?? "";
-      const type = feedSources[i]?.type ?? "";
+    const processFeedSource = async () => {
+      if (feedSourceQueue.length === 0) return;
+
+      const { feedUrl, feedTitle = "", type = "" } = feedSourceQueue.shift();
 
       await addFeedSource(
         feedUrl,
@@ -719,7 +733,13 @@ expressApp.post("/add_feed_source", async function(req, res) {
         type,
         entityExtractionFunction
       );
-    }
+
+      // Process the next feed source in the queue
+      processFeedSource();
+    };
+
+    // Start processing the feed sources
+    processFeedSource();
     return res.status(200).send(true);
   } catch (error) {
     log.error(`Error adding feed sources in /add_rss_feed`, error);
@@ -728,9 +748,9 @@ expressApp.post("/add_feed_source", async function(req, res) {
 });
 
 expressApp.get("/get_all_rss_sources", async function(req, res) {
-  if (!checkSyncKey(req.body.syncKey)) {
-    return res.status(403).send("Only one app instance allowed");
-  }
+  // if (!checkSyncKey(req.body.syncKey)) {
+  //   return res.status(403).send("Only one app instance allowed");
+  // }
   // logic for how RSS feed is added to the database, and the cron job is set up
 
   try {
@@ -860,10 +880,17 @@ expressApp.post("/get-file-content", async function(req, res) {
 let backupPath = "";
 
 expressApp.post("/status", (req, res) => {
-  console.log(" /status called");
-  if (!checkSyncKey(req.body.syncKey)) {
-    return res.status(403).send("Only one app instance allowed");
-  }
+  // console.log(" /status called");
+  // if (!checkSyncKey(req.body.syncKey)) {
+  //   return res.status(403).send("Only one app instance allowed");
+  // }
+  res.status(200).send("running");
+});
+expressApp.get("/status", (req, res) => {
+  // console.log(" /status called");
+  // if (!checkSyncKey(req.body.syncKey)) {
+  //   return res.status(403).send("Only one app instance allowed");
+  // }
   res.status(200).send("running");
 });
 

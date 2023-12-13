@@ -1,7 +1,7 @@
 {
   "name": "memex-desktop",
   "productName": "Memex Desktop",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Backup and sync to your favorite PKM tools",
   "main": "src/index.js",
   "scripts": {
@@ -17,15 +17,14 @@
     "build:win:x64": "electron-builder build --win nsis --x64",
     "build:win:ia32": "electron-builder build --win nsis --ia32",
     "build:linux:x64": "electron-builder build --linux AppImage --x64",
-    "build:linux:ia32": "electron-builder build --linux AppImage --ia32",
-    "build:linux:arm64": "electron-builder build --linux AppImage --arm64",
-    "build:all": "yarn build:mac:x64 && yarn build:mac:arm64 && yarn build:win:x64 && yarn build:win:ia32 && yarn build:linux:x64 && yarn build:linux:ia32 && yarn build:linux:arm64"
+    "build:all": "yarn build:mac:x64 && yarn build:mac:arm64 && yarn build:win:x64 && yarn build:win:ia32 && yarn build:linux:x64"
   },
   "build": {
     "appId": "memex-desktop",
     "productName": "Memex-Desktop",
     "copyright": "Copyright (c) 2023 Memex.Garden",
     "artifactName": "${productName}-v${version}-${os}-${arch}.${ext}",
+    "asar": false,
     "publish": [
       {
         "provider": "github",
