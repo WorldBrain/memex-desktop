@@ -1,14 +1,7 @@
 const express = require("express");
 const electron = require("electron");
-const {
-  app,
-  BrowserWindow,
-  ipcMain,
-  Tray,
-  Menu,
-  nativeImage,
-  dialog,
-} = electron;
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog } =
+  electron;
 const isPackaged = app.isPackaged;
 const xml2js = require("xml2js");
 const autoUpdater = require("electron-updater").autoUpdater;
@@ -271,7 +264,7 @@ function createWindow() {
   mainWindow.webContents.openDevTools();
 }
 
-app.on("before-quit", async function() {
+app.on("before-quit", async function () {
   log.info("before-quit");
   tray.destroy();
   if (server) {
@@ -288,17 +281,17 @@ app.on("ready", async () => {
 
   createAnnotationsTable = `CREATE TABLE IF NOT EXISTS annotationsTable(fullUrl STRING PRIMARY KEY, pageTitle STRING, fullHTML STRING, contentType STRING, createdWhen INTEGER, sourceApplication STRING, creatorId STRING)`;
 
-  sourcesDB.run(createRSSsourcesTable, function(err) {
+  sourcesDB.run(createRSSsourcesTable, function (err) {
     if (err) {
       console.log("err", err);
     }
   });
-  sourcesDB.run(createWebPagesTable, function(err) {
+  sourcesDB.run(createWebPagesTable, function (err) {
     if (err) {
       console.log("err", err);
     }
   });
-  sourcesDB.run(createAnnotationsTable, function(err) {
+  sourcesDB.run(createAnnotationsTable, function (err) {
     if (err) {
       console.log("err", err);
     }
@@ -378,7 +371,7 @@ app.on("ready", async () => {
 
     var updateMenuItem = {
       label: "Check for Updates",
-      click: function() {
+      click: function () {
         autoUpdater.checkForUpdates();
       },
     };
@@ -392,21 +385,21 @@ app.on("ready", async () => {
         label: "Start on Startup",
         type: "checkbox",
         checked: app.getLoginItemSettings().openAtLogin, // Check if the app is set to start on login
-        click: function(item) {
+        click: function (item) {
           var startOnStartup = item.checked;
           app.setLoginItemSettings({ openAtLogin: startOnStartup });
         },
       },
       {
         label: "Refresh Sync Key",
-        click: function() {
+        click: function () {
           store.delete("syncKey");
         },
       },
       updateMenuItem,
       {
         label: "Exit",
-        click: function() {
+        click: function () {
           console.log("exit clicked before");
           app.quit();
           console.log("exit clicked");
@@ -422,16 +415,16 @@ app.on("ready", async () => {
     try {
       autoUpdater
         .checkForUpdates()
-        .then(function() {})
-        .catch(function(err) {
+        .then(function () {})
+        .catch(function (err) {
           log.error("err", err);
         });
-      autoUpdater.on("update-available", async function() {
+      autoUpdater.on("update-available", async function () {
         log.info("update available");
         log.info(autoUpdater.downloadUpdate());
       });
 
-      autoUpdater.on("update-downloaded", function() {
+      autoUpdater.on("update-downloaded", function () {
         log.info("update downloaded");
         autoUpdater.quitAndInstall();
       });
@@ -517,7 +510,7 @@ async function extractEntitiesFromText(text2analzye) {
   return await extractEntities(text2analzye);
 }
 
-app.on("activate", function() {
+app.on("activate", function () {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
   }
@@ -536,7 +529,7 @@ function isPathComponentValid(component) {
 /// RABBIT HOLE ENDPOINTS ///
 /////////////////////////
 
-expressApp.put("/add_page", async function(req, res) {
+expressApp.put("/add_page", async function (req, res) {
   if (!checkSyncKey(req.body.syncKey)) {
     return res.status(403).send("Only one app instance allowed");
   }
@@ -583,7 +576,7 @@ expressApp.put("/add_page", async function(req, res) {
   }
 });
 
-expressApp.put("/add_annotation", async function(req, res) {
+expressApp.put("/add_annotation", async function (req, res) {
   if (!checkSyncKey(req.body.syncKey)) {
     return res.status(403).send("Only one app instance allowed");
   }
@@ -629,7 +622,7 @@ expressApp.put("/add_annotation", async function(req, res) {
   // return await indexAnnotation(req);
 });
 
-expressApp.post("/get_similar", async function(req, res) {
+expressApp.post("/get_similar", async function (req, res) {
   if (!checkSyncKey(req.body.syncKey)) {
     return res.status(403).send("Only one app instance allowed");
   }
@@ -642,7 +635,7 @@ expressApp.post("/get_similar", async function(req, res) {
     entityExtractionFunction
   );
 });
-expressApp.post("/load_feed_sources", async function(req, res) {
+expressApp.post("/load_feed_sources", async function (req, res) {
   if (!checkSyncKey(req.body.syncKey)) {
     return res.status(403).send("Only one app instance allowed");
   }
@@ -675,15 +668,13 @@ expressApp.post("/load_feed_sources", async function(req, res) {
 
 let feedSourceQueue = [];
 
-expressApp.post("/add_feed_source", async function(req, res) {
+expressApp.post("/add_feed_source", async function (req, res) {
   log.log("called add_feed_source");
   if (!checkSyncKey(req.body.syncKey)) {
     return res.status(403).send("Only one app instance allowed");
   }
   const feedSources = req.body.feedSources;
   feedSourceQueue = [...feedSourceQueue, ...feedSources];
-
-  console.log("feedSourceQueue", feedSourceQueue);
 
   // logic for how RSS feed is added to the database, and the cron job is set up
   try {
@@ -699,7 +690,7 @@ expressApp.post("/add_feed_source", async function(req, res) {
         const parser = new xml2js.Parser();
         let parsedData;
 
-        parser.parseString(data, function(err, result) {
+        parser.parseString(data, function (err, result) {
           if (err) {
             console.error("Failed to parse RSS feed: ", err);
           } else {
@@ -725,8 +716,9 @@ expressApp.post("/add_feed_source", async function(req, res) {
     const processFeedSource = async () => {
       if (feedSourceQueue.length === 0) return;
 
+      console.log("feedSourceQueue", feedSourceQueue);
       const feedSource = feedSourceQueue[0];
-      const { feedUrl, feedTitle = "", type = "" } = feedSource;
+      const { feedUrl, feedTitle, type = "" } = feedSource;
 
       await addFeedSource(
         feedUrl,
@@ -737,10 +729,10 @@ expressApp.post("/add_feed_source", async function(req, res) {
         entityExtractionFunction
       ).then(() => {
         feedSourceQueue.shift();
+        processFeedSource();
       });
 
       // Process the next feed source in the queue
-      processFeedSource();
     };
 
     // Start processing the feed sources
@@ -752,7 +744,7 @@ expressApp.post("/add_feed_source", async function(req, res) {
   }
 });
 
-expressApp.get("/get_all_rss_sources", async function(req, res) {
+expressApp.get("/get_all_rss_sources", async function (req, res) {
   if (!checkSyncKey(req.body.syncKey)) {
     return res.status(403).send("Only one app instance allowed");
   }
@@ -766,14 +758,14 @@ expressApp.get("/get_all_rss_sources", async function(req, res) {
     return res.status(500).json({ error: error });
   }
 });
-expressApp.put("/remove_rss_feed", async function(req, res) {
+expressApp.put("/remove_rss_feed", async function (req, res) {
   // logic for how RSS feed is added to the database, and the cron job is set up
 });
 ///////////////////////////
 /// PKM SYNC ENDPOINTS ///
 /////////////////////////
 
-expressApp.post("/set-directory", async function(req, res) {
+expressApp.post("/set-directory", async function (req, res) {
   if (!checkSyncKey(req.body.syncKey)) {
     return res.status(403).send("Only one app instance allowed");
   }
@@ -803,7 +795,7 @@ expressApp.post("/set-directory", async function(req, res) {
   }
 });
 
-expressApp.put("/update-file", async function(req, res) {
+expressApp.put("/update-file", async function (req, res) {
   if (!checkSyncKey(req.body.syncKey)) {
     return res.status(403).send("Only one app instance allowed");
   }
@@ -841,7 +833,7 @@ expressApp.put("/update-file", async function(req, res) {
   }
 });
 
-expressApp.post("/get-file-content", async function(req, res) {
+expressApp.post("/get-file-content", async function (req, res) {
   if (!checkSyncKey(req.body.syncKey)) {
     return res.status(403).send("Only one app instance allowed");
   }
@@ -1013,7 +1005,7 @@ expressApp.put("/backup/:collection/:timestamp", async (req, res) => {
   }
 
   var filepath = dirpath + `/${filename}`;
-  fs.writeFile(filepath, JSON.stringify(req.body), function(err) {
+  fs.writeFile(filepath, JSON.stringify(req.body), function (err) {
     if (err) {
       log.error(err);
       return res.status(500).send("Failed to write to file.");

@@ -35,6 +35,8 @@ async function addFeedSource(
         `SELECT * FROM rssSourcesTable WHERE feedUrl = ? AND lastSynced IS NOT NULL`,
         [feedUrl]
       );
+
+      console.log("existingEndpoint", existingEndpoint);
     } catch (error) {
       log.error("Error checking existing endpoint");
     }
@@ -64,34 +66,66 @@ async function addFeedSource(
     }
 
     if (!isSubstack) {
+      let parser;
+      let htmlContent;
       try {
         const response = await fetch(feedUrl);
-        const htmlContent = await response.text();
-        const parser = new xml2js.Parser();
-        let parsedData;
+        htmlContent = await response.text();
+      } catch (error) {
+        console.log("error fetching feed", error);
+      }
+      let parsedData;
 
+      try {
+        parser = new xml2js.Parser();
         parser.parseString(htmlContent, function (err, result) {
           if (err) {
-            console.error("Failed to parse HTML content: ", err);
+            console.log("Failed to parse HTML content: ", err);
           } else {
-            parsedData = result.rss.channel[0];
-            const imageUrl = parsedData.image[0].url[0];
-            if (imageUrl.startsWith("https://substackcdn.com")) {
+            parsedData = result?.rss?.channel[0];
+            const imageUrl = parsedData?.image[0]?.url[0];
+            if (imageUrl && imageUrl.startsWith("https://substackcdn.com")) {
               console.log("isSubstack");
               isSubstack = true;
             }
           }
         });
       } catch (error) {
-        console.error("Failed to fetch and parse feed URL: ", error);
-        return;
+        console.log("Failed to parse out xml content: ", error);
+      }
+
+      console.log("parsedDate", parsedData);
+
+      try {
+        if (!parsedData) {
+          console.log("htmlContent", htmlContent);
+          const $ = cheerio.load(htmlContent);
+          const preconnectLink = $(
+            'head link[rel="preconnect"][href="https://substackcdn.com"]'
+          );
+          console.log("preconnectLink", preconnectLink);
+          if (preconnectLink.length > 0) {
+            console.log("isSubstack");
+            isSubstack = true;
+          }
+        }
+      } catch (error) {
+        console.log("Failed to fetch and parse feed URL: ", error);
       }
     }
+
+    console.log("continue with feedURLprocessed", feedURLprocessed, isSubstack);
 
     if (isSubstack) {
       console.log("Substack feed detected");
       let links = [];
-      let fetchedAllHistory = false;
+
+      if (isSubstack && !feedURLprocessed.endsWith("/feed")) {
+        const url = new URL(feedUrl);
+        feedURLprocessed = `${url.protocol}//${url.host}/feed`;
+      }
+
+      console.log("feedURLprocessed2", feedURLprocessed);
 
       try {
         const response = await fetch(feedURLprocessed);
@@ -126,7 +160,9 @@ async function addFeedSource(
       }
 
       const allSiteMapPages = [];
-      const urlToFetch = `${feedUrl.replace("/feed", "/sitemap")}`;
+      const urlToFetch = `${feedURLprocessed.replace("/feed", "/sitemap")}`;
+
+      console.log("urlToFetch", urlToFetch);
 
       const response = await fetch(urlToFetch);
       const text = await response.text();
@@ -136,7 +172,7 @@ async function addFeedSource(
 
       anchors.each((i, anchor) => {
         const href = $(anchor).attr("href");
-        if (href.startsWith("/sitemap")) {
+        if (href?.startsWith("/sitemap")) {
           allSiteMapPages.push(href);
         }
       });
@@ -150,7 +186,7 @@ async function addFeedSource(
         pageAnchors.each((i, anchor) => {
           const href = $page(anchor).attr("href");
           console.log("href", href);
-          if (href.startsWith(`${feedUrl.replace("/feed", "")}/p/`)) {
+          if (href?.startsWith(`${feedUrl.replace("/feed", "")}/p/`)) {
             links.push(href);
           }
         });
@@ -209,8 +245,27 @@ async function addFeedSource(
         );
       }
     } else {
+      try {
+        const response = await fetch(feedURLprocessed);
+        if (response.ok) {
+          // if HTTP-status is 200-299
+          // get the response body (the method explained below)
+          feedData = await response.text();
+        } else {
+          feedData = null;
+          console.error("HTTP-Error: " + response.status);
+          return;
+        }
+      } catch (error) {
+        feedData = null;
+        console.error("Failed to load RSS feed: ", error);
+        return;
+      }
+
       let previousFeedData = feedData;
       let page = 1;
+
+      console.log("feeeee", feedURLprocessed);
 
       while (feedData) {
         // sometimes the page logic does not work and its the same page result bc of meaning less query params
@@ -223,19 +278,21 @@ async function addFeedSource(
           try {
             const response = await fetch(feedURLprocessed + `?page=${page}`);
             if (response.ok) {
+              console.log("page2 ok");
               // if HTTP-status is 200-299
               // get the response body (the method explained below)
               feedData = await response.text();
               previousFeedData = feedData;
+              break;
             } else {
               feedData = null;
               console.error("HTTP-Error: " + response.status);
-              return;
+              break;
             }
           } catch (error) {
             feedData = null;
             console.error("Failed to load RSS feed: ", error);
-            return;
+            break;
           }
         }
 
@@ -243,7 +300,7 @@ async function addFeedSource(
         let parsedData;
         parser.parseString(feedData, function (err, result) {
           if (err) {
-            console.error("Failed to parse RSS feed: ", err);
+            console.log("Failed to parse RSS feed: ", err);
           } else {
             parsedData = result.rss.channel[0];
           }
@@ -303,6 +360,7 @@ async function addFeedSource(
     }
 
     try {
+      console.log("update rssSourcesTable", feedURLprocessed);
       const sql = `INSERT OR REPLACE INTO rssSourcesTable VALUES (?, ?, ?, ?)`;
       sourcesDB.run(sql, [
         feedDataToSave.feedUrl,
@@ -310,12 +368,10 @@ async function addFeedSource(
         isSubstack ? "substack" : type,
         Date.now(),
       ]);
+      return true;
     } catch (error) {
       console.log("Feed Already Saved");
-      return;
     }
-
-    return true;
   } catch (error) {
     console.log("error indexing rss feed", error);
     return false;
