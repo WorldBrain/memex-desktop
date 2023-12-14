@@ -28,17 +28,6 @@ async function addFeedSource(
     const sourcesDB = allTables.sourcesDB;
     feedTitle = feedTitle;
 
-    // prepare Substack link structure
-    const isSubstack =
-      feedUrl.includes(".substack.com/") || type === "substack";
-
-    let feedURLprocessed = feedUrl;
-
-    if (isSubstack && !feedURLprocessed.endsWith("/feed")) {
-      const url = new URL(feedUrl);
-      feedURLprocessed = `${url.protocol}//${url.host}/feed`;
-    }
-
     // check if feed entry already exists
     let existingEndpoint;
     try {
@@ -46,7 +35,9 @@ async function addFeedSource(
         `SELECT * FROM rssSourcesTable WHERE feedUrl = ? AND lastSynced IS NOT NULL`,
         [feedUrl]
       );
-    } catch (error) {}
+    } catch (error) {
+      log.error("Error checking existing endpoint");
+    }
 
     if (existingEndpoint) {
       console.log("Feed Already Saved");
@@ -60,11 +51,45 @@ async function addFeedSource(
       // feedDescription: feedDescription,
       lastSynced: null,
     };
-
     let feedData;
 
+    // prepare Substack link structure
+    let isSubstack = feedUrl.includes(".substack.com/") || type === "substack";
+
+    let feedURLprocessed = feedUrl;
+
+    if (isSubstack && !feedURLprocessed.endsWith("/feed")) {
+      const url = new URL(feedUrl);
+      feedURLprocessed = `${url.protocol}//${url.host}/feed`;
+    }
+
+    if (!isSubstack) {
+      try {
+        const response = await fetch(feedUrl);
+        const htmlContent = await response.text();
+        const parser = new xml2js.Parser();
+        let parsedData;
+
+        parser.parseString(htmlContent, function (err, result) {
+          if (err) {
+            console.error("Failed to parse HTML content: ", err);
+          } else {
+            parsedData = result.rss.channel[0];
+            const imageUrl = parsedData.image[0].url[0];
+            if (imageUrl.startsWith("https://substackcdn.com")) {
+              console.log("isSubstack");
+              isSubstack = true;
+            }
+          }
+        });
+      } catch (error) {
+        console.error("Failed to fetch and parse feed URL: ", error);
+        return;
+      }
+    }
+
     if (isSubstack) {
-      let year = 2023;
+      console.log("Substack feed detected");
       let links = [];
       let fetchedAllHistory = false;
 
@@ -88,7 +113,7 @@ async function addFeedSource(
       const parser = new xml2js.Parser();
       let parsedData;
 
-      parser.parseString(feedData, function(err, result) {
+      parser.parseString(feedData, function (err, result) {
         if (err) {
           console.error("Failed to parse RSS feed: ", err);
         } else {
@@ -100,23 +125,39 @@ async function addFeedSource(
         feedDataToSave.feedTitle = parsedData.title[0];
       }
 
-      while (!fetchedAllHistory) {
-        const urlToFetch = `${feedUrl.replace("/feed", "")}/sitemap/${year}`;
-        const response = await fetch(urlToFetch);
-        if (response.status === 404) {
-          fetchedAllHistory = true;
-        }
-        const text = await response.text();
-        const $ = cheerio.load(text);
-        const anchors = $("a");
+      const allSiteMapPages = [];
+      const urlToFetch = `${feedUrl.replace("/feed", "/sitemap")}`;
 
-        anchors.each((i, anchor) => {
-          const href = $(anchor).attr("href");
+      const response = await fetch(urlToFetch);
+      const text = await response.text();
+
+      const $ = cheerio.load(text);
+      const anchors = $("a");
+
+      anchors.each((i, anchor) => {
+        const href = $(anchor).attr("href");
+        if (href.startsWith("/sitemap")) {
+          allSiteMapPages.push(href);
+        }
+      });
+
+      for (let page of allSiteMapPages) {
+        const pageResponse = await fetch(`${feedUrl.replace("/feed", page)}`);
+        const pageText = await pageResponse.text();
+        const $page = cheerio.load(pageText);
+        const pageAnchors = $page("a");
+
+        pageAnchors.each((i, anchor) => {
+          const href = $page(anchor).attr("href");
+          console.log("href", href);
           if (href.startsWith(`${feedUrl.replace("/feed", "")}/p/`)) {
             links.push(href);
           }
         });
-        year--;
+      }
+
+      if (links && links.length === 0) {
+        return;
       }
 
       for (let link of links) {
@@ -143,8 +184,9 @@ async function addFeedSource(
           metaDataTags = JSON.parse(jsonScript.html());
         } catch (error) {}
 
-        const datePublishedUnix =
-          new Date(metaDataTags.datePublished)?.getTime() / 1000 || 0;
+        const datePublishedUnix = metaDataTags?.datePublished
+          ? new Date(metaDataTags?.datePublished)?.getTime() / 1000
+          : 0;
         const title = $("title").text() || metaDataTags.headline;
 
         const pageDataToSave = {
@@ -199,7 +241,7 @@ async function addFeedSource(
 
         const parser = new xml2js.Parser();
         let parsedData;
-        parser.parseString(feedData, function(err, result) {
+        parser.parseString(feedData, function (err, result) {
           if (err) {
             console.error("Failed to parse RSS feed: ", err);
           } else {
@@ -265,7 +307,7 @@ async function addFeedSource(
       sourcesDB.run(sql, [
         feedDataToSave.feedUrl,
         feedDataToSave.feedTitle,
-        type,
+        isSubstack ? "substack" : type,
         Date.now(),
       ]);
     } catch (error) {

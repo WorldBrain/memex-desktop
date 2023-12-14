@@ -41,6 +41,19 @@ async function findSimilar(
       return item._distance < 1.25 && item.fullurl !== "null";
     });
 
+    // Group by URL and take the one with the lowest distance
+    filteredResult = Object.values(
+      filteredResult.reduce((acc, item) => {
+        if (
+          !acc[item.fullurl] ||
+          acc[item.fullurl]._distance > item._distance
+        ) {
+          acc[item.fullurl] = item;
+        }
+        return acc;
+      }, {})
+    );
+
     filteredResult = filteredResult.map(function(item) {
       return {
         fullUrl: item.fullurl,
@@ -54,8 +67,6 @@ async function findSimilar(
         entities: item.entities,
       };
     });
-
-    console.log("filteredResult", filteredResult);
 
     return res.status(200).send(filteredResult);
   } catch (error) {
