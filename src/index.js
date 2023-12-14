@@ -537,9 +537,9 @@ function isPathComponentValid(component) {
 /////////////////////////
 
 expressApp.put("/add_page", async function(req, res) {
-  // if (!checkSyncKey(req.body.syncKey)) {
-  //   return res.status(403).send("Only one app instance allowed");
-  // }
+  if (!checkSyncKey(req.body.syncKey)) {
+    return res.status(403).send("Only one app instance allowed");
+  }
   var fullUrl = req.body.fullUrl;
   var pageTitle = req.body.pageTitle;
   var fullHTML = req.body.fullHTML;
@@ -584,9 +584,9 @@ expressApp.put("/add_page", async function(req, res) {
 });
 
 expressApp.put("/add_annotation", async function(req, res) {
-  // if (!checkSyncKey(req.body.syncKey)) {
-  //   return res.status(403).send("Only one app instance allowed");
-  // }
+  if (!checkSyncKey(req.body.syncKey)) {
+    return res.status(403).send("Only one app instance allowed");
+  }
   var fullUrl = req.body?.fullUrl || "";
   var pageTitle = req.body?.pageTitle || "";
   var fullHTML = req.body?.fullHTML || "";
@@ -630,9 +630,9 @@ expressApp.put("/add_annotation", async function(req, res) {
 });
 
 expressApp.post("/get_similar", async function(req, res) {
-  // if (!checkSyncKey(req.body.syncKey)) {
-  //   return res.status(403).send("Only one app instance allowed");
-  // }
+  if (!checkSyncKey(req.body.syncKey)) {
+    return res.status(403).send("Only one app instance allowed");
+  }
   console.log("get_similar");
   return await findSimilar(
     req,
@@ -643,9 +643,9 @@ expressApp.post("/get_similar", async function(req, res) {
   );
 });
 expressApp.post("/load_feed_sources", async function(req, res) {
-  // if (!checkSyncKey(req.body.syncKey)) {
-  //   return res.status(403).send("Only one app instance allowed");
-  // }
+  if (!checkSyncKey(req.body.syncKey)) {
+    return res.status(403).send("Only one app instance allowed");
+  }
   try {
     const sourcesList = await allTables.sourcesDB.all(
       `SELECT * FROM rssSourcesTable`
@@ -677,9 +677,9 @@ let feedSourceQueue = [];
 
 expressApp.post("/add_feed_source", async function(req, res) {
   log.log("called add_feed_source");
-  // if (!checkSyncKey(req.body.syncKey)) {
-  //   return res.status(403).send("Only one app instance allowed");
-  // }
+  if (!checkSyncKey(req.body.syncKey)) {
+    return res.status(403).send("Only one app instance allowed");
+  }
   const feedSources = req.body.feedSources;
   feedSourceQueue = [...feedSourceQueue, ...feedSources];
 
@@ -753,9 +753,9 @@ expressApp.post("/add_feed_source", async function(req, res) {
 });
 
 expressApp.get("/get_all_rss_sources", async function(req, res) {
-  // if (!checkSyncKey(req.body.syncKey)) {
-  //   return res.status(403).send("Only one app instance allowed");
-  // }
+  if (!checkSyncKey(req.body.syncKey)) {
+    return res.status(403).send("Only one app instance allowed");
+  }
   // logic for how RSS feed is added to the database, and the cron job is set up
 
   try {

@@ -70,7 +70,7 @@ async function addFeedSource(
         const parser = new xml2js.Parser();
         let parsedData;
 
-        parser.parseString(htmlContent, function(err, result) {
+        parser.parseString(htmlContent, function (err, result) {
           if (err) {
             console.error("Failed to parse HTML content: ", err);
           } else {
@@ -113,7 +113,7 @@ async function addFeedSource(
       const parser = new xml2js.Parser();
       let parsedData;
 
-      parser.parseString(feedData, function(err, result) {
+      parser.parseString(feedData, function (err, result) {
         if (err) {
           console.error("Failed to parse RSS feed: ", err);
         } else {
@@ -184,8 +184,9 @@ async function addFeedSource(
           metaDataTags = JSON.parse(jsonScript.html());
         } catch (error) {}
 
-        const datePublishedUnix =
-          new Date(metaDataTags.datePublished)?.getTime() / 1000 || 0;
+        const datePublishedUnix = metaDataTags?.datePublished
+          ? new Date(metaDataTags?.datePublished)?.getTime() / 1000
+          : 0;
         const title = $("title").text() || metaDataTags.headline;
 
         const pageDataToSave = {
@@ -240,7 +241,7 @@ async function addFeedSource(
 
         const parser = new xml2js.Parser();
         let parsedData;
-        parser.parseString(feedData, function(err, result) {
+        parser.parseString(feedData, function (err, result) {
           if (err) {
             console.error("Failed to parse RSS feed: ", err);
           } else {
