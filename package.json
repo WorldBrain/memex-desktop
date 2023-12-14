@@ -139,6 +139,7 @@
     "jsdom": "^23.0.0",
     "mkdirp": "^3.0.1",
     "node-fetch": "^3.3.2",
+    "notarytool": "^0.0.4",
     "openai": "^4.20.0",
     "promised-sqlite3": "^2.1.0",
     "sqlite": "^5.1.1",

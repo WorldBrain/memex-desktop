@@ -103,3 +103,5 @@ electron-builder.yml
 .env
 
 data
+
+forge.config.js
