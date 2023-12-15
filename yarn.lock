@@ -2059,30 +2059,30 @@
     "@jridgewell/resolve-uri" "^3.1.0"
     "@jridgewell/sourcemap-codec" "^1.4.14"
 
-"@lancedb/vectordb-darwin-arm64@0.3.9":
-  version "0.3.9"
-  resolved "https://registry.yarnpkg.com/@lancedb/vectordb-darwin-arm64/-/vectordb-darwin-arm64-0.3.9.tgz#2a1882a12bfe6b47c3a42d2a2201d54ee39de811"
-  integrity sha512-irtAdfSRQDcfnMnB8T7D0atLFfu1MMZZ1JaxMKu24DDZ8e4IMYKUplxwvWni3241yA9yDE/pliRZCNQbQCEfrg==
+"@lancedb/vectordb-darwin-arm64@0.3.11":
+  version "0.3.11"
+  resolved "https://registry.yarnpkg.com/@lancedb/vectordb-darwin-arm64/-/vectordb-darwin-arm64-0.3.11.tgz#31e9858aa34540f6656f786ff99d6839729eed2b"
+  integrity sha512-N0Ak0jWmSh+QIUJKgtD85+/N0UMBZxaHrd9leusWgjEdtZdQqyzd6VWYAFPR6W6p8tt1hUZiuTRQ6ugfNhyEsg==
 
-"@lancedb/vectordb-darwin-x64@0.3.9":
-  version "0.3.9"
-  resolved "https://registry.yarnpkg.com/@lancedb/vectordb-darwin-x64/-/vectordb-darwin-x64-0.3.9.tgz#118fa5dfee28597d9f612df9312b26270c83f4b1"
-  integrity sha512-4xXQoPheyIl1P5kRoKmZtaAHFrYdL9pw5yq+r6ewIx0TCemN4LSvzSUTqM5nZl3QPU8FeL0CGD8Gt2gMU0HQ2A==
+"@lancedb/vectordb-darwin-x64@0.3.11":
+  version "0.3.11"
+  resolved "https://registry.yarnpkg.com/@lancedb/vectordb-darwin-x64/-/vectordb-darwin-x64-0.3.11.tgz#36fd87bea67dc7e8223c8769f7f6d53cd955402a"
+  integrity sha512-vugA+Z4XDrV1gFW5PfqJImw0w84NpGrZsaTZ9afw2oc5a37alx5zOoHEoBQimaX88j+YjWme38h3B98qoNTP5w==
 
-"@lancedb/vectordb-linux-arm64-gnu@0.3.9":
-  version "0.3.9"
-  resolved "https://registry.yarnpkg.com/@lancedb/vectordb-linux-arm64-gnu/-/vectordb-linux-arm64-gnu-0.3.9.tgz#8b003fc1a8f9ad7a928874d4ab71027927e7e2fa"
-  integrity sha512-WIxCZKnLeSlz0PGURtKSX6hJ4CYE2o5P+IFmmuWOWB1uNapQu6zOpea6rNxcRFHUA0IJdO02lVxVfn2hDX4SMg==
+"@lancedb/vectordb-linux-arm64-gnu@0.3.11":
+  version "0.3.11"
+  resolved "https://registry.yarnpkg.com/@lancedb/vectordb-linux-arm64-gnu/-/vectordb-linux-arm64-gnu-0.3.11.tgz#af2e864cdafccfdbeb0f4dc1866617962be85b85"
+  integrity sha512-mArXy17URht7cTdGgNc+yL6BOxvK4vAtNaPh68WBOy7e438l6++s2E4bZyaeyeoIv8sPENDmJZzBr4YuBEc7yw==
 
-"@lancedb/vectordb-linux-x64-gnu@0.3.9":
-  version "0.3.9"
-  resolved "https://registry.yarnpkg.com/@lancedb/vectordb-linux-x64-gnu/-/vectordb-linux-x64-gnu-0.3.9.tgz#50d4451384566d02eb3b0a59e5cf888a67b52ec0"
-  integrity sha512-bQbcV9adKzYbJLNzDjk9OYsMnT2IjmieLfb4IQ1hj5IUoWfbg80Bd0+gZUnrmrhG6fe56TIriFZYQR9i7TSE9Q==
+"@lancedb/vectordb-linux-x64-gnu@0.3.11":
+  version "0.3.11"
+  resolved "https://registry.yarnpkg.com/@lancedb/vectordb-linux-x64-gnu/-/vectordb-linux-x64-gnu-0.3.11.tgz#9be84ae0ae56cfa5f7e9c3698cd8d087acd4f009"
+  integrity sha512-AoF0f/mUP1d2r5nirLQiajHBVnhsYCD/vDGUlTmLWH4lX4v9zVqlh9HmXjpLBcaK4klGmt5CBmcb+tj5v2/ySA==
 
-"@lancedb/vectordb-win32-x64-msvc@0.3.9":
-  version "0.3.9"
-  resolved "https://registry.yarnpkg.com/@lancedb/vectordb-win32-x64-msvc/-/vectordb-win32-x64-msvc-0.3.9.tgz#123ad593d30f3581f88ea586ccf8d41133755039"
-  integrity sha512-7EXI7P1QvAfgJNPWWBMDOkoJ696gSBAClcyEJNYg0JV21jVFZRwJVI3bZXflesWduFi/mTuzPkFFA68us1u19A==
+"@lancedb/vectordb-win32-x64-msvc@0.3.11":
+  version "0.3.11"
+  resolved "https://registry.yarnpkg.com/@lancedb/vectordb-win32-x64-msvc/-/vectordb-win32-x64-msvc-0.3.11.tgz#48097429d30771656c7f4104ea840435281deefa"
+  integrity sha512-Zq+JHtkaGaoozHcOdXid3jRkEj6u2d1C0VD+Wg+7AIpRokzYt5zcKWPzjDnqoRuD+VTv6YFjYN58RmYwa2Ktiw==
 
 "@leichtgewicht/ip-codec@^2.0.1":
   version "2.0.4"
@@ -10135,21 +10135,21 @@ vary@^1, vary@~1.1.2:
   resolved "https://registry.npmjs.org/vary/-/vary-1.1.2.tgz"
   integrity sha512-BNGbWLfd0eUPabhkXUVm0j8uuvREyTh5ovRa/dyow/BqAbZJyC+5fU+IzQOzmAKzYqYRAISoRhdQr3eIZ/PXqg==
 
-vectordb@^0.3.9:
-  version "0.3.9"
-  resolved "https://registry.yarnpkg.com/vectordb/-/vectordb-0.3.9.tgz#1f5b99392e5768bf4ad472a1239144644c31f60f"
-  integrity sha512-oEYDrUtTXg6t+urQ9vFOhwdK5vX/NNfNwn9j7OTd9jrmLfVLQc4+zQZJrX/8cX3T3MoyoWYIyWC7d2XBHrRDWA==
+vectordb@^0.3.11:
+  version "0.3.11"
+  resolved "https://registry.yarnpkg.com/vectordb/-/vectordb-0.3.11.tgz#577a26555006aebacdf48e6290b11bc29b4aef71"
+  integrity sha512-7DetyiMy7RzZoz6EpM5rzFqTY1oBH81mT7uH2khBICGTd1quNvOwYJxm4zviduypvEbIiLjqHzspHU99iHTWlA==
   dependencies:
     "@apache-arrow/ts" "^12.0.0"
     "@neon-rs/load" "^0.0.74"
     apache-arrow "^12.0.0"
     axios "^1.4.0"
   optionalDependencies:
-    "@lancedb/vectordb-darwin-arm64" "0.3.9"
-    "@lancedb/vectordb-darwin-x64" "0.3.9"
-    "@lancedb/vectordb-linux-arm64-gnu" "0.3.9"
-    "@lancedb/vectordb-linux-x64-gnu" "0.3.9"
-    "@lancedb/vectordb-win32-x64-msvc" "0.3.9"
+    "@lancedb/vectordb-darwin-arm64" "0.3.11"
+    "@lancedb/vectordb-darwin-x64" "0.3.11"
+    "@lancedb/vectordb-linux-arm64-gnu" "0.3.11"
+    "@lancedb/vectordb-linux-x64-gnu" "0.3.11"
+    "@lancedb/vectordb-win32-x64-msvc" "0.3.11"
 
 verror@^1.10.0:
   version "1.10.1"
