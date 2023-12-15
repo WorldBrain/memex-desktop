@@ -36,9 +36,6 @@ async function indexDocument(
     var contentChunks = [];
     contentChunks = await splitContentInReasonableChunks(fullHTML);
 
-    let promises = [];
-    const entities = [];
-
     const chunksToWrite = [];
     for (let chunk of contentChunks) {
       // const entitiesForChunk = await extractEntitiesFromText(
