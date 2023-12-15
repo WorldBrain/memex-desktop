@@ -5,6 +5,7 @@ const { cleanFullHTML } = require('../utils.js')
 const xml2js = require('xml2js')
 const jsdom = require('jsdom')
 const cheerio = require('cheerio')
+const { extract: extractFeed } = require('@extractus/feed-extractor')
 
 const { JSDOM } = jsdom
 
@@ -15,6 +16,7 @@ async function getAllRSSSources(allTables) {
     return allRSSSources
 }
 
+// TODO: Need some way to support generic pagination
 async function addFeedSource(
     feedUrl,
     feedTitle,
@@ -26,7 +28,6 @@ async function addFeedSource(
     try {
         // check if the RSS feed source already exists in the database
         const sourcesDB = allTables.sourcesDB
-        feedTitle = feedTitle
 
         // check if feed entry already exists
         let existingEndpoint
@@ -47,14 +48,13 @@ async function addFeedSource(
             return
         }
 
-        let feedDataToSave = {
+        const feedDataToSave = {
             feedUrl: feedUrl,
             feedTitle: feedTitle,
             // feedIcon: feedIcon,
             // feedDescription: feedDescription,
             lastSynced: null,
         }
-        let feedData
 
         // prepare Substack link structure
         let isSubstack =
@@ -67,320 +67,60 @@ async function addFeedSource(
             feedURLprocessed = `${url.protocol}//${url.host}/feed`
         }
 
-        if (!isSubstack) {
-            let parser
-            let htmlContent
-            try {
-                const response = await fetch(feedUrl)
-                htmlContent = await response.text()
-            } catch (error) {
-                console.log('error fetching feed', error)
-                throw new Error('error fetching feed:' + error.message)
-            }
-            let parsedData
+        const feedResult = await extractFeed(feedUrl)
 
-            try {
-                parser = new xml2js.Parser()
-                parser.parseString(htmlContent, function (err, result) {
-                    if (err) {
-                        console.log('Failed to parse HTML content: ', err)
-                    } else {
-                        parsedData = result?.rss?.channel[0]
-                        const imageUrl = parsedData?.image[0]?.url[0]
-                        if (
-                            imageUrl &&
-                            imageUrl.startsWith('https://substackcdn.com')
-                        ) {
-                            console.log('isSubstack')
-                            isSubstack = true
-                        }
-                    }
-                })
-            } catch (error) {
-                console.log('Failed to parse out xml content: ', error)
-                log.log('Failed to parse out xml content: ', error)
-            }
-
-            console.log('parsedDate', parsedData)
-
-            try {
-                if (!parsedData) {
-                    console.log('htmlContent', htmlContent)
-                    const $ = cheerio.load(htmlContent)
-                    const preconnectLink = $(
-                        'head link[rel="preconnect"][href="https://substackcdn.com"]',
-                    )
-                    console.log('preconnectLink', preconnectLink)
-                    if (preconnectLink.length > 0) {
-                        console.log('isSubstack')
-                        isSubstack = true
-                    }
-                }
-            } catch (error) {
-                console.log('Failed to fetch and parse feed URL: ', error)
-                throw new Error(
-                    'error parsing HTML with cheerio:' + error.message,
-                )
-            }
-        }
-
-        if (isSubstack) {
-            console.log('Substack feed detected')
-            let links = []
-
-            if (isSubstack && !feedURLprocessed.endsWith('/feed')) {
-                const url = new URL(feedUrl)
-                feedURLprocessed = `${url.protocol}//${url.host}/feed`
-            }
-
-            console.log('feedURLprocessed2', feedURLprocessed)
-
-            try {
-                const response = await fetch(feedURLprocessed)
-                if (response.ok) {
-                    // if HTTP-status is 200-299
-                    // get the response body (the method explained below)
-                    feedData = await response.text()
-                } else {
-                    feedData = null
-                    console.error('HTTP-Error: ' + response.status)
-                    log.error('HTTP-Error: ' + response.status)
-                    return
-                }
-            } catch (error) {
-                feedData = null
-                console.error('Failed to load RSS feed: ', error)
-                log.error('Failed to load RSS feed: ', error)
-                return
-            }
-
-            const parser = new xml2js.Parser()
-            let parsedData
-
-            parser.parseString(feedData, function (err, result) {
-                if (err) {
-                    console.error('HTTP-Error: ' + response.status)
-                    log.error('HTTP-Error: ' + response.status)
-                } else {
-                    parsedData = result.rss.channel[0]
-                }
+        // Fetch and index each page's data for this feed
+        for (const entry of feedResult.entries) {
+            const response = await fetch(entry.link, {
+                headers: {
+                    Accept: 'text/html',
+                },
             })
+            const fullHTML = await response.text()
+            const cleanHTML = await cleanFullHTML(fullHTML)
 
-            if (!feedTitle || feedTitle.length === 0) {
-                feedDataToSave.feedTitle = parsedData.title[0]
-            }
+            const $ = cheerio.load(fullHTML)
 
-            const allSiteMapPages = []
-            const urlToFetch = `${feedURLprocessed.replace(
-                '/feed',
-                '/sitemap',
-            )}`
-
-            console.log('urlToFetch', urlToFetch)
-
-            const response = await fetch(urlToFetch)
-            const text = await response.text()
-
-            const $ = cheerio.load(text)
-            const anchors = $('a')
-
-            anchors.each((i, anchor) => {
-                const href = $(anchor).attr('href')
-                if (href?.startsWith('/sitemap')) {
-                    allSiteMapPages.push(href)
-                }
-            })
-
-            for (let page of allSiteMapPages) {
-                const pageResponse = await fetch(
-                    `${feedUrl.replace('/feed', page)}`,
-                )
-                const pageText = await pageResponse.text()
-                const $page = cheerio.load(pageText)
-                const pageAnchors = $page('a')
-
-                pageAnchors.each((i, anchor) => {
-                    const href = $page(anchor).attr('href')
-                    console.log('href', href)
-                    if (
-                        href?.startsWith(`${feedUrl.replace('/feed', '')}/p/`)
-                    ) {
-                        links.push(href)
-                    }
-                })
-            }
-
-            if (links && links.length === 0) {
-                return
-            }
-
-            for (let link of links) {
-                await new Promise((resolve) => setTimeout(resolve, 1000))
-                const response = await fetch(link, {
-                    headers: {
-                        Accept: 'text/html',
-                    },
-                })
-                const fullHTML = await response.text()
-                const cleanHTML = await cleanFullHTML(fullHTML)
-
-                const $ = cheerio.load(fullHTML)
-                let metaDataTags
-
-                try {
-                    const scripts = $('script')
-                    const jsonScript = scripts
-                        .filter(
-                            (i, script) =>
-                                $(script).attr('type') ===
-                                'application/ld+json',
-                        )
-                        .first()
-
-                    metaDataTags = JSON.parse(jsonScript.html())
-                } catch (error) {}
-
-                const datePublishedUnix = metaDataTags?.datePublished
-                    ? new Date(metaDataTags?.datePublished)?.getTime() / 1000
-                    : 0
-                const title = $('title').text() || metaDataTags.headline
-
-                const pageDataToSave = {
-                    fullUrl: link,
-                    pageTitle: title,
-                    cleanHTML: cleanHTML,
-                    contentType: 'rss-feed-item',
-                    createdWhen: datePublishedUnix,
-                    sourceApplication: 'RSS',
-                    creatorId: '',
-                    metaDataJSON: JSON.stringify(metaDataTags) || '',
-                }
-
-                saveAndIndexFeedPages(
-                    sourcesDB,
-                    pageDataToSave,
-                    embedTextFunction,
-                    allTables,
-                    entityExtractionFunction,
-                )
-            }
-        } else {
+            // TODO: This does not seem to be a reliable way of getting generic webpage metadata
+            //  What metadata are we actually interested in here?
+            let metaDataTags
             try {
-                const response = await fetch(feedURLprocessed)
-                if (response.ok) {
-                    // if HTTP-status is 200-299
-                    // get the response body (the method explained below)
-                    feedData = await response.text()
-                } else {
-                    feedData = null
-                    console.error('HTTP-Error: ' + response.status)
-                    log.error('HTTP-Error: ' + response.status)
-                    throw new Error('HTTP status not OK')
-                }
-            } catch (error) {
-                feedData = null
-                console.error('Failed to load RSS feed: ', error)
-                log.error('Failed to load RSS feed: ', error)
-                throw new Error('Could not fetch feed URL to be processed')
-            }
-
-            let previousFeedData = feedData
-            let page = 1
-
-            while (feedData) {
-                // sometimes the page logic does not work and its the same page result bc of meaning less query params
-                // catches this and then stops the loop
-                if (previousFeedData === feedData && page > 1) {
-                    feedData = null
-                    return
-                }
-                if (page > 1) {
-                    try {
-                        const response = await fetch(
-                            feedURLprocessed + `?page=${page}`,
-                        )
-                        if (response.ok) {
-                            console.log('page2 ok')
-                            // if HTTP-status is 200-299
-                            // get the response body (the method explained below)
-                            previousFeedData = feedData
-                            feedData = await response.text()
-                        } else {
-                            feedData = null
-                            console.error('HTTP-Error: ' + response.status)
-                            break
-                        }
-                    } catch (error) {
-                        feedData = null
-                        console.error('Failed to load RSS feed: ', error)
-                        break
-                    }
-                }
-
-                const parser = new xml2js.Parser()
-                let parsedData
-                parser.parseString(feedData, function (err, result) {
-                    if (err) {
-                        console.log('Failed to parse RSS feed: ', err)
-                    } else {
-                        parsedData = result.rss.channel[0]
-                    }
-                })
-
-                if (
-                    (!feedTitle || feedTitle.length === 0) &&
-                    (page < 1 || !page)
-                ) {
-                    feedDataToSave.feedTitle = parsedData.title[0]
-                }
-
-                for (let i = 0; i < parsedData.item.length; i++) {
-                    let item = parsedData.item[i]
-                    let title = item.title && item.title[0]
-                    let link = item.link && item.link[0]
-                    let fullHTML = ''
-                    let pubDate = item.pubDate && item.pubDate[0]
-                    let createdWhen = new Date(pubDate).getTime()
-                    let creatorId = item.author && item.author[0]
-
-                    await fetch(link)
-                        .then((response) => response.text())
-                        .then(async (body) => {
-                            fullHTML = body
-                            cleanHTML = await cleanFullHTML(fullHTML)
-                        })
-                        .catch((error) => {
-                            console.error('Failed to load full HTML: ', error)
-                        })
-
-                    // console.log("item", item);
-                    // title = item.querySelector("title").textContent;
-                    // link = item.querySelector("link").textContent;
-                    // pubDate = item.querySelector("pubDate").textContent;
-                    // content = item.querySelector("content\\:encoded").textContent;
-                    // createdWhen = new Date(pubDate).getTime();
-
-                    const pageDataToSave = {
-                        fullUrl: link,
-                        pageTitle: title,
-                        fullHTML: fullHTML,
-                        cleanHTML: cleanHTML,
-                        contentType: 'rss-feed-item',
-                        createdWhen: createdWhen,
-                        sourceApplication: 'RSS',
-                        creatorId: creatorId,
-                    }
-
-                    await saveAndIndexFeedPages(
-                        sourcesDB,
-                        pageDataToSave,
-                        embedTextFunction,
-                        allTables,
-                        entityExtractionFunction,
+                const scripts = $('script')
+                const jsonScript = scripts
+                    .filter(
+                        (i, script) =>
+                            $(script).attr('type') === 'application/ld+json',
                     )
-                }
-                page++
+                    .first()
+
+                metaDataTags = JSON.parse(jsonScript.html())
+            } catch (error) {
+                log.warn('Could not parse JSON metadata :', entry.link)
             }
+
+            const datePublishedUnix = entry.published
+                ? new Date(entry.published).getTime() / 1000
+                : 0
+
+            const pageDataToSave = {
+                fullHTML,
+                cleanHTML,
+                fullUrl: entry.link,
+                pageTitle: entry.title,
+                contentType: 'rss-feed-item',
+                createdWhen: datePublishedUnix,
+                sourceApplication: 'RSS',
+                creatorId: undefined, // TODO: no easy way to get creator data for any webpage
+                metaDataJSON: JSON.stringify(metaDataTags) || '',
+            }
+
+            await saveAndIndexFeedPages(
+                sourcesDB,
+                pageDataToSave,
+                embedTextFunction,
+                allTables,
+                entityExtractionFunction,
+            )
         }
 
         try {

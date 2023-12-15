@@ -752,7 +752,7 @@ expressApp.post('/add_feed_source', async function (req, res) {
         for (const feedSource of feedSourceQueue) {
             const { feedUrl, feedTitle, type = '' } = feedSource
 
-            await addFeedSource(
+            const success = await addFeedSource(
                 feedUrl,
                 feedTitle,
                 embedTextFunction,
@@ -760,6 +760,10 @@ expressApp.post('/add_feed_source', async function (req, res) {
                 type,
                 entityExtractionFunction,
             )
+
+            if (success) {
+                // TODO: Handle different outcomes
+            }
         }
 
         return res.status(200).send(true)
