@@ -105,3 +105,8 @@ electron-builder.yml
 data
 
 forge.config.js
+
+afterSignHook.js
+
+buildAPIkeys.js
+AuthKey_7LNRLB4RZ6.p8

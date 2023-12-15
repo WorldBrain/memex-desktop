@@ -13,17 +13,21 @@
     "build": "electron-builder build -mwl --publish never",
     "deploy": "electron-builder build --mac --linux --win --publish never",
     "build:mac:x64": "electron-builder build --mac dmg zip --x64",
+    "build:mac:arm64:dmg": "electron-builder build --mac dmg --arm64",
+    "build:mac:arm64:dmg:withoutSign": "electron-builder build --mac dmg --arm64 --config.afterSign",
     "build:mac:arm64": "electron-builder build --mac dmg zip --arm64",
     "build:mac": "electron-builder build --mac dmg zip --x64 --arm64",
     "build:win:x64": "electron-builder build --win nsis --x64",
     "build:win:ia32": "electron-builder build --win nsis --ia32",
     "build:linux:x64": "electron-builder build --linux AppImage --x64",
-    "build:all": "yarn build:mac && yarn build:win:x64 && yarn build:win:ia32 && yarn build:linux:x64"
+    "build:all": "yarn build:mac && yarn build:win:x64 && yarn build:win:ia32 && yarn build:linux:x64",
+    "build:allbutMac": "yarn build:win:x64 && yarn build:win:ia32 && yarn build:linux:x64"
   },
   "build": {
     "appId": "memex-desktop",
     "productName": "Memex-Desktop",
     "copyright": "Copyright (c) 2023 Memex.Garden",
+    "afterSign": "./afterSignHook.js",
     "artifactName": "${productName}-v${version}-${os}-${arch}.${ext}",
     "asar": false,
     "publish": [
@@ -50,7 +54,9 @@
             "x64"
           ]
         }
-      ]
+      ],
+      "hardenedRuntime": true,
+      "entitlements": "entitlements.mac.inherit.plist"
     },
     "win": {
       "target": [
@@ -130,6 +136,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "dotenv-webpack": "^8.0.1",
+    "electron-builder-notarize": "^1.5.1",
     "electron-log": "^4.4.8",
     "electron-settings": "^4.0.2",
     "electron-squirrel-startup": "^1.0.0",
