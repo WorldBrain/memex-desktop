@@ -2,6 +2,8 @@ const express = require("express");
 const electron = require("electron");
 const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog } =
   electron;
+const url = require("url");
+
 const isPackaged = app.isPackaged;
 const xml2js = require("xml2js");
 const autoUpdater = require("electron-updater").autoUpdater;
@@ -131,6 +133,7 @@ async function initializeDatabase() {
   } else {
     dbPath = "data/sourcesDB.db";
   }
+  console.log("Database initialized at: ", dbPath);
   sourcesDB = await AsyncDatabase.open(dbPath);
 }
 
@@ -222,6 +225,7 @@ function stopExpress() {
 }
 
 function pickDirectory(type) {
+  console.log("pickDirectory", type);
   try {
     var directories = dialog.showOpenDialogSync({
       properties: ["openDirectory"],
@@ -254,14 +258,33 @@ function createWindow() {
   var mainWindow = new BrowserWindow({
     height: 600,
     width: 800,
-    webPreferences: {
-      preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
-    },
+    // webPreferences: {
+    //   preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
+    // },
   });
 
-  mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
+  let indexPath;
+  if (isPackaged) {
+    indexPath = path.join(electron.app.getAppPath(), "src", "index.html");
+  } else {
+    indexPath = path.join(electron.app.getAppPath(), "src", "index.html");
+  }
 
-  mainWindow.webContents.openDevTools();
+  console.log("indexPath", indexPath);
+
+  mainWindow.loadURL(
+    url.format({
+      pathname: indexPath,
+      protocol: "file:",
+      slashes: true,
+    })
+  );
+
+  // mainWindow.webContents.openDevTools();
+  mainWindow.on("close", (event) => {
+    event.preventDefault();
+    mainWindow.hide();
+  });
 }
 
 app.on("before-quit", async function () {
@@ -510,11 +533,11 @@ async function extractEntitiesFromText(text2analzye) {
   return await extractEntities(text2analzye);
 }
 
-app.on("activate", function () {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  }
-});
+// app.on("activate", function () {
+//   if (BrowserWindow.getAllWindows().length === 0) {
+//     createWindow();
+//   }
+// });
 
 // Helper Functions for server endpoints and file select
 
@@ -877,17 +900,25 @@ expressApp.post("/get-file-content", async function (req, res) {
 let backupPath = "";
 
 expressApp.post("/status", (req, res) => {
-  // console.log(" /status called");
-  // if (!checkSyncKey(req.body.syncKey)) {
-  //   return res.status(403).send("Only one app instance allowed");
-  // }
+  console.log(" /status called");
+  if (!checkSyncKey(req.body.syncKey)) {
+    return res.status(403).send("Only one app instance allowed");
+  }
+
+  console.log('settings.get("hasOnboarded")', settings.get("hasOnboarded"));
+
+  if (settings.get("hasOnboarded") === undefined) {
+    createWindow();
+    settings.set("hasOnboarded", true);
+  }
+
   res.status(200).send("running");
 });
 expressApp.get("/status", (req, res) => {
-  // console.log(" /status called");
-  // if (!checkSyncKey(req.body.syncKey)) {
-  //   return res.status(403).send("Only one app instance allowed");
-  // }
+  console.log(" /status called");
+  if (!checkSyncKey(req.body.syncKey)) {
+    return res.status(403).send("Only one app instance allowed");
+  }
   res.status(200).send("running");
 });
 
