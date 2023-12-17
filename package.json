@@ -90,7 +90,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/WorldBrain/memex-local-sync"
+    "url": "https://github.com/WorldBrain/memex-desktop"
   },
   "keywords": [],
   "author": {
@@ -102,6 +102,9 @@
     "**/*": "prettier --write --ignore-unknown"
   },
   "devDependencies": {
+    "@babel/cli": "^7.23.4",
+    "@babel/core": "^7.23.5",
+    "@babel/preset-env": "^7.23.5",
     "@electron-forge/cli": "^6.4.2",
     "@electron-forge/maker-deb": "^6.4.2",
     "@electron-forge/maker-rpm": "^6.4.2",
@@ -109,11 +112,15 @@
     "@electron-forge/maker-zip": "^6.4.2",
     "@electron-forge/plugin-auto-unpack-natives": "^6.4.2",
     "@electron-forge/plugin-webpack": "^6.4.2",
+    "@types/jsdom": "^21.1.6",
     "@types/mkdirp": "^2.0.0",
+    "@types/turndown": "^5.0.4",
     "@typescript-eslint/eslint-plugin": "^5.0.0",
     "@typescript-eslint/parser": "^5.0.0",
     "@vercel/webpack-asset-relocator-loader": "1.7.3",
+    "copy-webpack-plugin": "^11.0.0",
     "css-loader": "^6.0.0",
+    "dotenv-webpack": "^8.0.1",
     "electron": "26.2.1",
     "electron-builder": "^24.6.4",
     "eslint": "^8.0.1",
@@ -129,21 +136,14 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.10.2",
-    "@babel/cli": "^7.23.4",
-    "@babel/core": "^7.23.5",
-    "@babel/preset-env": "^7.23.5",
     "@extractus/feed-extractor": "^7.0.8",
-    "@types/jsdom": "^21.1.6",
-    "@types/turndown": "^5.0.4",
     "@xenova/transformers": "^2.9.0",
     "apache-arrow": "^14.0.1",
     "axios": "^1.6.2",
     "better-sqlite3": "^9.2.2",
     "cheerio": "^1.0.0-rc.12",
-    "copy-webpack-plugin": "^11.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
-    "dotenv-webpack": "^8.0.1",
     "electron-builder-notarize": "^1.5.1",
     "electron-log": "^4.4.8",
     "electron-settings": "^4.0.2",
@@ -164,7 +164,6 @@
     "turndown": "^7.1.2",
     "vectordb": "^0.3.11",
     "wink-pos-tagger": "^2.2.2",
-    "xml2js": "^0.6.2",
-    "yarn": "^1.22.21"
+    "xml2js": "^0.6.2"
   }
 }
