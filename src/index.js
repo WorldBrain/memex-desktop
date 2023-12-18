@@ -1,7 +1,15 @@
 const express = require('express')
 const electron = require('electron')
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog } =
-    electron
+const {
+    app,
+    BrowserWindow,
+    ipcMain,
+    Tray,
+    Menu,
+    nativeImage,
+    dialog,
+    Notification,
+} = electron
 const url = require('url')
 
 const isPackaged = app.isPackaged
@@ -9,10 +17,11 @@ const xml2js = require('xml2js')
 const autoUpdater = require('electron-updater').autoUpdater
 const Store = require('electron-store')
 const crypto2 = require('crypto')
-
-const sqlite3 = require('sqlite3').verbose()
 const { AsyncDatabase } = require('promised-sqlite3')
 
+const axios = require('axios')
+const fs = require('fs')
+const path = require('path')
 const log = require('electron-log')
 const lancedb = require('vectordb')
 const dotEnv = require('dotenv')
@@ -21,8 +30,6 @@ const settings = require('electron-settings')
 const cors = require('cors')
 
 // Electron App basic setup
-const fs = require('fs')
-const path = require('path')
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY // Must be 256 bits (32 characters)
 const IV_LENGTH = 16 // For AES, this is always 16
 const store = new Store()
@@ -48,6 +55,8 @@ let allTables = {
     sourcesDB: sourcesDB,
     vectorDocsTable: vectorDocsTable,
 }
+let mainWindow
+let downloadProgress = 0
 
 ////////////////////////////////
 /// TRANSFORMER JS STUFF ///
@@ -108,36 +117,6 @@ expressApp.get('/echo', (req, res) => {
 
 // Example route 3other functionality you want to add
 var server = null
-
-async function initializeDatabase() {
-    let dbPath = null
-
-    if (isPackaged) {
-        dbPath = path.join(app.getPath('userData'), 'data/sourcesDB.db')
-        log.log('dbPath', app.getPath('userData'))
-        fs.access(
-            app.getPath('userData'),
-            fs.constants.R_OK | fs.constants.W_OK,
-            async (err) => {
-                if (err) {
-                    log.error('No access to database file:', err)
-                } else {
-                    log.log(
-                        'Read/Write access is available for the database file',
-                    )
-                    const dir = path.join(app.getPath('userData'), 'data')
-                    if (!fs.existsSync(dir)) {
-                        fs.mkdirSync(dir, { recursive: true })
-                    }
-                }
-            },
-        )
-    } else {
-        dbPath = 'data/sourcesDB.db'
-    }
-    console.log('Database initialized at: ', dbPath)
-    sourcesDB = await AsyncDatabase.open(dbPath)
-}
 
 function startExpress() {
     if (!server || !server.listening) {
@@ -260,36 +239,51 @@ function pickDirectory(type) {
     return null
 }
 
-function createWindow() {
-    var mainWindow = new BrowserWindow({
-        height: 600,
-        width: 800,
-        // webPreferences: {
-        //   preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
-        // },
-    })
+async function createWindow() {
+    return new Promise((resolve, reject) => {
+        mainWindow = new BrowserWindow({
+            height: 600,
+            width: 800,
+            webPreferences: {
+                preload: path.join(__dirname, 'preload.js'),
+                nodeIntegration: true,
+            },
+        })
 
-    let indexPath
-    if (isPackaged) {
-        indexPath = path.join(electron.app.getAppPath(), 'src', 'index.html')
-    } else {
-        indexPath = path.join(electron.app.getAppPath(), 'src', 'index.html')
-    }
+        let indexPath
+        if (isPackaged) {
+            indexPath = path.join(
+                electron.app.getAppPath(),
+                'src',
+                'loading.html',
+            )
+        } else {
+            indexPath = path.join(
+                electron.app.getAppPath(),
+                'src',
+                'loading.html',
+            )
+        }
+        mainWindow.webContents.openDevTools()
+        mainWindow.on('close', (event) => {
+            event.preventDefault()
+            mainWindow.hide()
+        })
 
-    console.log('indexPath', indexPath)
-
-    mainWindow.loadURL(
-        url.format({
-            pathname: indexPath,
-            protocol: 'file:',
-            slashes: true,
-        }),
-    )
-
-    // mainWindow.webContents.openDevTools();
-    mainWindow.on('close', (event) => {
-        event.preventDefault()
-        mainWindow.hide()
+        mainWindow
+            .loadURL(
+                url.format({
+                    pathname: indexPath,
+                    protocol: 'file:',
+                    slashes: true,
+                }),
+            )
+            .then(() => {
+                resolve() // Resolve the promise when the window is loaded
+            })
+            .catch((error) => {
+                reject(error) // Reject the promise if there's an error
+            })
     })
 }
 
@@ -303,7 +297,36 @@ app.on('before-quit', async function () {
 })
 
 app.on('ready', async () => {
-    await initializeDatabase()
+    if ((await settings.get('hasOnboarded')) === undefined) {
+        await createWindow()
+        new Notification({
+            title: 'Memex Rabbit Hole Ready!',
+            body: 'Go back to the extension sidebar to continue',
+        }).show()
+        await initializeDatabase()
+        await initializeModels()
+        mainWindow.loadURL(
+            url.format({
+                pathname: path.join(
+                    electron.app.getAppPath(),
+                    'src',
+                    'index.html',
+                ),
+                protocol: 'file:',
+                slashes: true,
+            }),
+        )
+        if (!mainWindow || !mainWindow.isFocused()) {
+            new Notification({
+                title: 'Memex Rabbit Hole Ready!',
+                body: 'Go back to the extension sidebar to continue',
+            }).show()
+        }
+        //await settings.set('hasOnboarded', true)
+    } else {
+        await initializeDatabase()
+        await initializeModels()
+    }
     // create Tables
     createRSSsourcesTable = `CREATE TABLE IF NOT EXISTS rssSourcesTable(feedUrl STRING PRIMARY KEY, feedTitle STRING, type STRING, lastSynced INTEGER)`
     createWebPagesTable = `CREATE TABLE IF NOT EXISTS webPagesTable(fullUrl STRING PRIMARY KEY, pageTitle STRING, fullHTML STRING, contentType STRING, createdWhen INTEGER, sourceApplication STRING, creatorId STRING, metaDataJSON STRING)`
@@ -470,41 +493,6 @@ app.on('ready', async () => {
     }
 
     //general setup of model pipeline needs to be on highest level to be consistent in chunking size for vectors
-    let { pipeline, env } = await import('@xenova/transformers')
-
-    modelPipeline = pipeline
-    modelEnvironment = env
-    modelEnvironment.allowLocalModels = true
-    // modelEnvironment.allowRemoteModels = false;
-
-    // prepare similarity embedding model, needs to be on highest level to be consistent in chunking size for vectors
-
-    const modelsDir = path.join(app.getPath('userData'), 'models')
-    if (!fs.existsSync(modelsDir)) {
-        fs.mkdirSync(modelsDir, { recursive: true })
-    }
-
-    const modelFilePath = path.join(
-        modelsDir,
-        'all-mpnet-base-v2_quantized.onnx',
-    )
-    if (!fs.existsSync(modelFilePath)) {
-        const modelUrl =
-            'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/onnx/model_quantized.onnx' // replace with actual URL
-        const response = await fetch(modelUrl)
-        const buffer = await response.arrayBuffer()
-        fs.writeFileSync(modelFilePath, Buffer.from(buffer))
-    }
-
-    modelEnvironment.localModelPath = modelFilePath
-    console.log(`Model file path: ${modelFilePath}`)
-
-    generateEmbeddings = await modelPipeline(
-        'feature-extraction',
-        'Xenova/all-mpnet-base-v2',
-    )
-
-    embedTextFunction = await generateEmbeddingFromText
     ///
 
     // // prepare NER extraction model, needs to be on highest level to be consistent in chunking size for vectors
@@ -533,12 +521,112 @@ app.on('ready', async () => {
 })
 
 async function generateEmbeddingFromText(text2embed) {
+    console.log('generateEmbeddingFromText')
     return await generateEmbeddings(text2embed, {
         pooling: 'mean',
         normalize: true,
     })
 }
 
+async function initializeDatabase() {
+    let dbPath = null
+
+    if (isPackaged) {
+        dbPath = path.join(app.getPath('userData'), 'data/sourcesDB.db')
+        log.log('dbPath', app.getPath('userData'))
+        fs.access(
+            app.getPath('userData'),
+            fs.constants.R_OK | fs.constants.W_OK,
+            async (err) => {
+                if (err) {
+                    log.error('No access to database file:', err)
+                } else {
+                    log.log(
+                        'Read/Write access is available for the database file',
+                    )
+                    const dir = path.join(app.getPath('userData'), 'data')
+                    if (!fs.existsSync(dir)) {
+                        fs.mkdirSync(dir, { recursive: true })
+                    }
+                }
+            },
+        )
+    } else {
+        dbPath = 'data/sourcesDB.db'
+    }
+    console.log('Database initialized at: ', dbPath)
+    sourcesDB = await AsyncDatabase.open(dbPath)
+}
+
+async function initializeModels() {
+    let { pipeline, env } = await import('@xenova/transformers')
+
+    modelPipeline = pipeline
+    modelEnvironment = env
+    modelEnvironment.allowLocalModels = true
+
+    const modelsDir = path.join(app.getPath('userData'), 'models')
+    if (!fs.existsSync(modelsDir)) {
+        fs.mkdirSync(modelsDir, { recursive: true })
+    }
+
+    const modelFilePath = path.join(
+        modelsDir,
+        'all-mpnet-base-v2_quantized.onnx',
+    )
+
+    if (!fs.existsSync(modelFilePath)) {
+        const modelUrl =
+            'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/onnx/model_quantized.onnx'
+
+        const writer = fs.createWriteStream(modelFilePath)
+
+        const response = await axios({
+            url: modelUrl,
+            method: 'GET',
+            responseType: 'stream',
+        })
+
+        const totalLength = response.headers['content-length']
+
+        console.log('Starting download')
+        response.data.pipe(writer)
+
+        return new Promise((resolve, reject) => {
+            let bytesDownloaded = 0
+            response.data.on('data', (chunk) => {
+                bytesDownloaded += chunk.length
+                downloadProgress = Math.floor(
+                    (bytesDownloaded / totalLength) * 100,
+                )
+
+                mainWindow.webContents.send(
+                    'download-progress',
+                    `${downloadProgress}%`,
+                )
+            })
+
+            response.data.on('end', () => {
+                console.log('Download complete')
+                resolve()
+            })
+
+            writer.on('error', reject)
+        })
+    }
+
+    modelEnvironment.localModelPath = modelFilePath
+    console.log(`Model file path: ${modelFilePath}`)
+
+    generateEmbeddings = await modelPipeline(
+        'feature-extraction',
+        'Xenova/all-mpnet-base-v2',
+    )
+
+    embedTextFunction = generateEmbeddingFromText
+
+    return true
+}
 async function extractEntitiesFromText(text2analzye) {
     return await extractEntities(text2analzye)
 }
@@ -913,13 +1001,6 @@ expressApp.post('/status', (req, res) => {
     console.log(' /status called')
     if (!checkSyncKey(req.body.syncKey)) {
         return res.status(403).send('Only one app instance allowed')
-    }
-
-    console.log('settings.get("hasOnboarded")', settings.get('hasOnboarded'))
-
-    if (settings.get('hasOnboarded') === undefined) {
-        createWindow()
-        settings.set('hasOnboarded', true)
     }
 
     res.status(200).send('running')

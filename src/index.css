@@ -31,3 +31,7 @@ p {
     font-size: 16px;
     text-align: center;
 }
+
+.downloadProgress {
+    margin-right: 10px;
+}

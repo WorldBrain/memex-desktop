@@ -28,7 +28,6 @@
     "appId": "memex-desktop",
     "productName": "Memex-Desktop",
     "copyright": "Copyright (c) 2023 Memex.Garden",
-    "afterSign": "./afterSignHook.js",
     "artifactName": "${productName}-v${version}-${os}-${arch}.${ext}",
     "asar": false,
     "publish": [
@@ -137,10 +136,9 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.10.2",
     "@extractus/feed-extractor": "^7.0.8",
-    "@xenova/transformers": "^2.9.0",
+    "@xenova/transformers": "^2.11.0",
     "apache-arrow": "^14.0.1",
     "axios": "^1.6.2",
-    "better-sqlite3": "^9.2.2",
     "cheerio": "^1.0.0-rc.12",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
@@ -157,8 +155,6 @@
     "notarytool": "^0.0.4",
     "openai": "^4.20.0",
     "promised-sqlite3": "^2.1.0",
-    "sqlite": "^5.1.1",
-    "sqlite-vss": "^0.1.2",
     "sqlite3": "^5.1.6",
     "stopwords-iso": "^1.1.0",
     "turndown": "^7.1.2",
