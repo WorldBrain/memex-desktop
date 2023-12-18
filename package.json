@@ -23,10 +23,9 @@
     "build:mac:arm64:dmg:withoutSign": "electron-builder build --mac dmg --arm64 --config.afterSign",
     "build:mac:arm64": "electron-builder build --mac dmg zip --arm64",
     "build:mac": "electron-builder build --mac dmg zip --x64 --arm64",
-    "build:win:x64": "electron-builder build --win nsis --x64",
-    "build:win:ia32": "electron-builder build --win nsis --ia32",
-    "build:linux:x64": "electron-builder build --linux AppImage --x64",
-    "build:all": "yarn build:mac && yarn build:win:x64 && yarn build:win:ia32 && yarn build:linux:x64",
+    "build:win": "electron-builder build --win nsis --x64",
+    "build:linux": "electron-builder build --linux AppImage --x64",
+    "build:all": "yarn build:mac && yarn build:win && yarn build:linux",
     "build:allbutMac": "yarn build:win:x64 && yarn build:win:ia32 && yarn build:linux:x64",
     "prepare": "husky install"
   },
@@ -65,12 +64,12 @@
       "entitlements": "entitlements.mac.inherit.plist"
     },
     "win": {
+      "icon": "src/img/memex-logo.png",
       "target": [
         {
           "target": "nsis",
           "arch": [
-            "x64",
-            "ia32"
+            "x64"
           ]
         }
       ]
@@ -89,9 +88,13 @@
     "extraResources": [
       "src/img/tray_icon.png",
       "src/models/*",
-      "data/*",
+      "!data/*",
       "node_modules/@xenova/*"
-    ]
+    ], 
+  "files": [
+    "!dist/**/*",
+    "!data/**/*"
+  ]
   },
   "repository": {
     "type": "git",
@@ -107,9 +110,6 @@
     "**/*": "prettier --write --ignore-unknown"
   },
   "devDependencies": {
-    "@babel/cli": "^7.23.4",
-    "@babel/core": "^7.23.5",
-    "@babel/preset-env": "^7.23.5",
     "@electron-forge/cli": "^6.4.2",
     "@electron-forge/maker-deb": "^6.4.2",
     "@electron-forge/maker-rpm": "^6.4.2",

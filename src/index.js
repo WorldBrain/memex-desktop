@@ -264,7 +264,7 @@ async function createWindow() {
                 'loading.html',
             )
         }
-        mainWindow.webContents.openDevTools()
+        // mainWindow.webContents.openDevTools()
         mainWindow.on('close', (event) => {
             event.preventDefault()
             mainWindow.hide()
