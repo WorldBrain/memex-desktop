@@ -7,6 +7,12 @@
   "scripts": {
     "start": "tsc && electron-forge start",
     "package": "electron-forge package",
+    "package:mac:arm64": "yarn package --platform mac --arch arm64",
+    "package:mac:x64": "yarn package --platform mac --arch x64",
+    "package:mac": "yarn package --platform mac --arch x64",
+    "package:win:x64": "yarn package --platform win nsis --arch x64",
+    "package:linux:x64": "yarn package --platform linux --arch x64",
+    "package:all": "yarn package:mac:arm64  && yarn package:mac:x64 && yarn package:win:x64 && yarn package:linux:x64",
     "make": "electron-forge make",
     "publish": "electron-forge publish",
     "lint": "eslint --ext .ts,.tsx .",
