@@ -1,9 +1,6 @@
 name: Build and release Memex-Desktop builds
 
-on:
-    push:
-        branches:
-            - master
+on: push
 
 jobs:
     release:
