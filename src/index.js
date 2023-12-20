@@ -27,13 +27,23 @@ const lancedb = require('vectordb')
 const dotEnv = require('dotenv')
 dotEnv.config()
 const settings = require('electron-settings')
+
+if (!isPackaged) {
+    settings.configure({
+        dir: path.join(electron.app.getAppPath(), 'data'),
+    })
+}
+console.log('settings', settings.file())
 const cors = require('cors')
+const chokidar = require('chokidar')
 
 // Electron App basic setup
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY // Must be 256 bits (32 characters)
-const IV_LENGTH = 16 // For AES, this is always 16
-const store = new Store()
+const store = isPackaged
+    ? new Store()
+    : new Store({ cwd: path.join(electron.app.getAppPath(), 'data') })
 let tray = null
+
+console.log('isPackaged', electron.app.getAppPath())
 const EXPRESS_PORT = 11922 // Different from common React port 3000 to avoid conflicts
 let expressApp = express()
 expressApp.use(cors({ origin: '*' }))
@@ -140,39 +150,6 @@ function startExpress() {
             `Express server is already running on http://localhost:${EXPRESS_PORT}`,
         )
     }
-}
-
-function encrypt(text) {
-    var iv = crypto2.randomBytes(IV_LENGTH)
-    var cipher = crypto2.createCipheriv(
-        'aes-256-cbc',
-        Buffer.from(ENCRYPTION_KEY),
-        iv,
-    )
-    var encrypted = cipher.update(text)
-
-    encrypted = Buffer.concat([encrypted, cipher.final()])
-
-    var key = iv.toString('hex') + ':' + encrypted.toString('hex')
-
-    return key
-}
-
-function decrypt(text) {
-    var textParts = text.split(':')
-    var iv = Buffer.from(textParts.shift(), 'hex')
-    var encryptedText = Buffer.from(textParts.join(':'), 'hex')
-    var decipher = crypto2.createDecipheriv(
-        'aes-256-cbc',
-        Buffer.from(ENCRYPTION_KEY),
-        iv,
-    )
-
-    let decrypted = decipher.update(encryptedText)
-
-    decrypted = Buffer.concat([decrypted, decipher.final()])
-
-    return decrypted.toString()
 }
 
 function checkSyncKey(inputKey) {
@@ -322,7 +299,7 @@ app.on('ready', async () => {
                 body: 'Go back to the extension sidebar to continue',
             }).show()
         }
-        //await settings.set('hasOnboarded', true)
+        await settings.set('hasOnboarded', true)
     } else {
         await initializeDatabase()
         await initializeModels()
@@ -452,6 +429,12 @@ app.on('ready', async () => {
                     store.delete('syncKey')
                 },
             },
+            {
+                label: 'Add Local folder',
+                click: async function () {
+                    await watchNewFolder()
+                },
+            },
             updateMenuItem,
             {
                 label: 'Exit',
@@ -490,6 +473,13 @@ app.on('ready', async () => {
     } catch (error) {
         log.error('error', error)
         app.quit()
+    }
+
+    // starting folder watchers:
+    var folderPaths = store.get('folderPaths')
+
+    if (folderPaths) {
+        startWatchers(folderPaths)
     }
 
     //general setup of model pipeline needs to be on highest level to be consistent in chunking size for vectors
@@ -630,14 +620,6 @@ async function initializeModels() {
 async function extractEntitiesFromText(text2analzye) {
     return await extractEntities(text2analzye)
 }
-
-// app.on("activate", function () {
-//   if (BrowserWindow.getAllWindows().length === 0) {
-//     createWindow();
-//   }
-// });
-
-// Helper Functions for server endpoints and file select
 
 function isPathComponentValid(component) {
     if (
@@ -988,6 +970,110 @@ expressApp.post('/get-file-content', async function (req, res) {
         res.status(500).json({ error: 'Internal server error' })
     }
 })
+
+expressApp.post('/watch_new_folder', async function (req, res) {
+    const newFolder = await dialog.showOpenDialog({
+        properties: ['openDirectory'],
+    })
+
+    if (!newFolder) {
+        return res.status(500).json({ error: 'Folder selection aborted' })
+    }
+
+    store.push('folderPaths', newFolder)
+    console.log(store.get('folderPaths'))
+    try {
+        var watcher = chokidar.watch(directoryPath, {
+            ignored: /(^|[\/\\])\../, // ignore dotfiles
+            persistent: true,
+        })
+
+        watcher.on('add', async function (path) {
+            console.log('File', path, 'has been added')
+
+            await processFiles(filesAndSubfolders)
+
+            res.status(200).send(path)
+        })
+
+        const filesAndSubfolders = fs.readdirSync(newFolder)
+        await Promise.all(filesAndSubfolders.map(processFiles))
+    } catch (error) {
+        log.error('Error in /watch_new_folder:', error)
+        res.status(500).json({ error: 'Internal server error' })
+    }
+})
+
+async function watchNewFolder() {
+    const newWindow = new BrowserWindow({
+        height: 10,
+        width: 10,
+        transparent: true,
+        frame: false,
+    })
+    newWindow.focus()
+    newWindow.on('close', (event) => {
+        event.preventDefault()
+        newWindow.hide()
+    })
+
+    const newFolderData = await dialog.showOpenDialog(newWindow, {
+        properties: ['openDirectory'],
+    })
+
+    const newFolder = newFolderData.filePaths[0]
+    newWindow.close()
+
+    if (!newFolder) {
+        return false
+    }
+
+    var folderPaths = store.get('folderPaths') || []
+    // if (folderPaths.includes(newFolder)) {
+    //     return
+    // }
+    folderPaths.push(newFolder)
+    folderPaths = Array.from(new Set(folderPaths))
+    store.set('folderPaths', folderPaths)
+    console.log(store.get('folderPaths'))
+    try {
+        const filesAndSubfolders = fs.readdirSync(newFolder)
+        await Promise.all(filesAndSubfolders.map(processFiles))
+        startWatchers([newFolder])
+    } catch (error) {
+        log.error('Error in /watch_new_folder:', error)
+        res.status(500).json({ error: 'Internal server error' })
+    }
+}
+
+async function startWatchers(folders) {
+    // take the given folderPath array and start watchers on each folder
+
+    var watcher = chokidar.watch(folder, {
+        ignored: /(^|[\/\\])\../, // ignore dotfiles
+        persistent: true,
+    })
+    folders.forEach((folder) => {
+        watcher.on('change', async function (path) {
+            console.log('File', path, 'has been added')
+            await processFiles(filesAndSubfolders)
+            res.status(200).send(path)
+        })
+    })
+}
+
+async function processFiles(file) {
+    const extension = file.split('.').pop()
+    if (extension === 'pdf') {
+        console.log('isPDF')
+    } else if (extension === 'md') {
+        console.log('ismarkdown')
+    } else if (extension === 'epub') {
+        console.log('isEpub')
+    } else if (extension === 'mobi') {
+        console.log('isMobi')
+    }
+}
 
 ///////////////////////////
 /// BACKUP ENDPOINTS ///
