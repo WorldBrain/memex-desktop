@@ -1,4 +1,4 @@
-name: Build and release Windows + Linux Memex-Desktop builds
+name: Build and release Memex-Desktop builds
 
 on: push
 
