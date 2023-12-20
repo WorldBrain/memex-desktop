@@ -1,7 +1,7 @@
 {
   "name": "memex-desktop",
   "productName": "Memex Desktop",
-  "version": "0.0.14",
+  "version": "0.0.11",
   "description": "Backup and sync to your favorite PKM tools",
   "main": "src/index.js",
   "scripts": {
@@ -33,6 +33,7 @@
     "appId": "memex-desktop",
     "productName": "Memex-Desktop",
     "copyright": "Copyright (c) 2023 Memex.Garden",
+    "afterSign": "electron-builder-notarize",
     "artifactName": "${productName}-v${version}-${os}-${arch}.${ext}",
     "asar": false,
     "publish": [
@@ -46,19 +47,20 @@
       "icon": "src/img/memex-logo.png",
       "target": [
         {
-          "target": "zip",
+          "target": "dmg",
           "arch": [
             "arm64",
             "x64"
           ]
         },
         {
-          "target": "dmg",
+          "target": "zip",
           "arch": [
             "arm64",
             "x64"
           ]
         }
+       
       ],
       "hardenedRuntime": true,
       "entitlements": "entitlements.mac.inherit.plist"

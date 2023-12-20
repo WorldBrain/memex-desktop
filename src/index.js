@@ -97,6 +97,8 @@ if (!settings.has('userPref.startOnStartup')) {
     })
 }
 
+// trigger random change
+
 var MAIN_WINDOW_WEBPACK_ENTRY = null
 var MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY = null
 
