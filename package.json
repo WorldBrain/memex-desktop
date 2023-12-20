@@ -1,7 +1,7 @@
 {
   "name": "memex-desktop",
   "productName": "Memex Desktop",
-  "version": "0.0.13",
+  "version": "0.0.14",
   "description": "Backup and sync to your favorite PKM tools",
   "main": "src/index.js",
   "scripts": {
@@ -16,8 +16,8 @@
     "make": "electron-forge make",
     "publish": "electron-forge publish",
     "lint": "eslint --ext .ts,.tsx .",
-    "build": "electron-builder build -mwl --publish never",
     "deploy": "electron-builder build --mac --linux --win --publish never",
+    "build:manual": "electron-builder build -mwl --publish never",
     "build:mac:x64": "electron-builder build --mac dmg zip --x64",
     "build:mac:arm64:dmg": "electron-builder build --mac dmg --arm64",
     "build:mac:arm64:dmg:withoutSign": "electron-builder build --mac dmg --arm64 --config.afterSign",
