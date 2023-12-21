@@ -335,7 +335,7 @@ app.on('ready', async () => {
                 body: 'Go back to the extension sidebar to continue',
             }).show()
         }
-        // await settings.set('hasOnboarded', true)
+        await settings.set('hasOnboarded', true)
     } else {
         await initializeDatabase()
         embedTextFunction = await initializeModels()
