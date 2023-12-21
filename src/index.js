@@ -608,8 +608,6 @@ async function initializeModels() {
         'all-mpnet-base-v2_quantized.onnx',
     )
 
-    console.log(`Model file path: ${modelFilePath}`)
-
     if (!fs.existsSync(modelFilePath)) {
         const modelUrl =
             'https://huggingface.co/Xenova/all-mpnet-base-v2/resolve/main/onnx/model_quantized.onnx'
@@ -702,8 +700,6 @@ expressApp.put('/add_page', async function (req, res) {
     var creatorId = req.body.creatorId
     var sourceApplication = req.body.sourceApplication
     var metadataJSON = ''
-
-    console.log('req.body', req.body)
 
     try {
         await allTables.sourcesDB.run(
