@@ -39,10 +39,25 @@ console.log('settings', settings.file())
 const cors = require('cors')
 const chokidar = require('chokidar')
 
+// setting up settings and config files in the right folders
+if (!isPackaged) {
+    settings.configure({
+        dir: path.join(electron.app.getAppPath(), '..', 'MemexDesktopData'),
+    })
+}
+const store = isPackaged
+    ? new Store()
+    : new Store({
+          cwd: path.join(electron.app.getAppPath(), '..', 'MemexDesktopData'),
+      })
+
+console.log('store', store.path)
 // Electron App basic setup
 const store = isPackaged
     ? new Store()
     : new Store({ cwd: path.join(electron.app.getAppPath(), 'data') })
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY // Must be 256 bits (32 characters)
+const IV_LENGTH = 16 // For AES, this is always 16
 let tray = null
 
 console.log('isPackaged', electron.app.getAppPath())
@@ -59,7 +74,7 @@ const {
 // VectorTable settings
 let vectorDBuri = isPackaged
     ? path.join(app.getPath('userData'), 'data/vectorDB')
-    : 'data/vectorDB'
+    : path.join('../MemexDesktopData/vectorDB')
 let sourcesDB = null
 let vectorDocsTable = null
 let vectorDocsTableName = 'vectordocstable'
@@ -158,7 +173,6 @@ function startExpress() {
 }
 
 function checkSyncKey(inputKey) {
-    var store = new Store()
     var storedKey = store.get('syncKey')
 
     if (!storedKey) {
@@ -286,8 +300,7 @@ app.on('ready', async () => {
             body: 'Go back to the extension sidebar to continue',
         }).show()
         await initializeDatabase()
-        await initializeModels()
-        await initializeFileSystemWatchers()
+        embedTextFunction = await initializeModels()
         mainWindow.loadURL(
             url.format({
                 pathname: path.join(
@@ -308,8 +321,7 @@ app.on('ready', async () => {
         await settings.set('hasOnboarded', true)
     } else {
         await initializeDatabase()
-        await initializeModels()
-        await initializeFileSystemWatchers()
+        embedTextFunction = await initializeModels()
     }
     try {
         startExpress() // Start Express server first
@@ -414,7 +426,6 @@ app.on('ready', async () => {
 })
 
 async function generateEmbeddingFromText(text2embed) {
-    console.log('generateEmbeddingFromText')
     return await generateEmbeddings(text2embed, {
         pooling: 'mean',
         normalize: true,
@@ -425,6 +436,11 @@ async function initializeDatabase() {
     let dbPath = null
 
     if (isPackaged) {
+        if (!fs.existsSync(path.join(app.getPath('userData'), 'data'))) {
+            fs.mkdirSync(path.join(app.getPath('userData'), 'data'), {
+                recursive: true,
+            })
+        }
         dbPath = path.join(app.getPath('userData'), 'data/sourcesDB.db')
         log.log('dbPath', app.getPath('userData'))
         fs.access(
@@ -445,8 +461,15 @@ async function initializeDatabase() {
             },
         )
     } else {
-        dbPath = 'data/sourcesDB.db'
+        if (!fs.existsSync(path.join(__dirname, '..', 'MemexDesktopData'))) {
+            fs.mkdirSync(path.join(__dirname, '..', 'MemexDesktopData'), {
+                recursive: true,
+            })
+        }
+        dbPath = '../MemexDesktopData/sourcesDB.db'
     }
+    console.log('dbPath', dbPath)
+    sourcesDB = await AsyncDatabase.open(dbPath)
     console.log('Database initialized at: ', dbPath)
     sourcesDB = await AsyncDatabase.open(dbPath)
 
@@ -549,7 +572,14 @@ async function initializeModels() {
     modelEnvironment = env
     modelEnvironment.allowLocalModels = true
 
-    const modelsDir = path.join(app.getPath('userData'), 'models')
+    let modelsDir
+
+    if (isPackaged) {
+        modelsDir = path.join(app.getPath('userData'), 'models')
+    } else {
+        modelsDir = '../MemexDesktopData/models'
+    }
+
     if (!fs.existsSync(modelsDir)) {
         fs.mkdirSync(modelsDir, { recursive: true })
     }
@@ -576,7 +606,7 @@ async function initializeModels() {
         console.log('Starting download')
         response.data.pipe(writer)
 
-        return new Promise((resolve, reject) => {
+        new Promise((resolve, reject) => {
             let bytesDownloaded = 0
             response.data.on('data', (chunk) => {
                 bytesDownloaded += chunk.length
@@ -600,7 +630,7 @@ async function initializeModels() {
     }
 
     modelEnvironment.localModelPath = modelFilePath
-    console.log(`Model file path: ${modelFilePath}`)
+    console.log(`Model file path1: ${modelFilePath}`)
 
     generateEmbeddings = await modelPipeline(
         'feature-extraction',
@@ -608,8 +638,6 @@ async function initializeModels() {
     )
 
     embedTextFunction = generateEmbeddingFromText
-
-    return true
 
     //general setup of model pipeline needs to be on highest level to be consistent in chunking size for vectors
     ///
@@ -637,6 +665,8 @@ async function initializeModels() {
     // );
 
     // setting up all databases and tables
+
+    return embedTextFunction
 }
 async function extractEntitiesFromText(text2analzye) {
     return await extractEntities(text2analzye)
@@ -753,7 +783,7 @@ expressApp.post('/get_similar', async function (req, res) {
     if (!checkSyncKey(req.body.syncKey)) {
         return res.status(403).send('Only one app instance allowed')
     }
-    console.log('get_similar')
+    console.log('find_similar', embedTextFunction)
     return await findSimilar(
         req,
         res,
