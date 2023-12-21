@@ -3,6 +3,7 @@ const {
     extractEntitiesFromText,
 } = require('./utils.js')
 const log = require('electron-log')
+const TurndownService = require('turndown')
 
 async function indexDocument(
     fullUrlInput,
@@ -34,7 +35,14 @@ async function indexDocument(
             }
         }
         var contentChunks = []
-        contentChunks = await splitContentInReasonableChunks(fullHTML)
+        if (contentType === 'annotation') {
+            var turndownService = new TurndownService()
+            contentChunks = [turndownService.turndown(fullHTML)]
+        } else {
+            contentChunks = await splitContentInReasonableChunks(fullHTML)
+        }
+
+        console.log('contentChunks', contentChunks)
 
         const chunksToWrite = []
         for (let chunk of contentChunks) {
