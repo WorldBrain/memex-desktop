@@ -29,10 +29,22 @@ dotEnv.config()
 const settings = require('electron-settings')
 const cors = require('cors')
 
+// setting up settings and config files in the right folders
+if (!isPackaged) {
+    settings.configure({
+        dir: path.join(electron.app.getAppPath(), '..', 'MemexDesktopData'),
+    })
+}
+const store = isPackaged
+    ? new Store()
+    : new Store({
+          cwd: path.join(electron.app.getAppPath(), '..', 'MemexDesktopData'),
+      })
+
+console.log('store', store.path)
 // Electron App basic setup
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY // Must be 256 bits (32 characters)
 const IV_LENGTH = 16 // For AES, this is always 16
-const store = new Store()
 let tray = null
 const EXPRESS_PORT = 11922 // Different from common React port 3000 to avoid conflicts
 let expressApp = express()
@@ -47,7 +59,7 @@ const {
 // VectorTable settings
 let vectorDBuri = isPackaged
     ? path.join(app.getPath('userData'), 'data/vectorDB')
-    : 'data/vectorDB'
+    : path.join('../MemexDesktopData/vectorDB')
 let sourcesDB = null
 let vectorDocsTable = null
 let vectorDocsTableName = 'vectordocstable'
@@ -178,7 +190,6 @@ function decrypt(text) {
 }
 
 function checkSyncKey(inputKey) {
-    var store = new Store()
     var storedKey = store.get('syncKey')
 
     if (!storedKey) {
@@ -306,7 +317,7 @@ app.on('ready', async () => {
             body: 'Go back to the extension sidebar to continue',
         }).show()
         await initializeDatabase()
-        await initializeModels()
+        embedTextFunction = await initializeModels()
         mainWindow.loadURL(
             url.format({
                 pathname: path.join(
@@ -324,80 +335,10 @@ app.on('ready', async () => {
                 body: 'Go back to the extension sidebar to continue',
             }).show()
         }
-        //await settings.set('hasOnboarded', true)
+        // await settings.set('hasOnboarded', true)
     } else {
         await initializeDatabase()
-        await initializeModels()
-    }
-    // create Tables
-    createRSSsourcesTable = `CREATE TABLE IF NOT EXISTS rssSourcesTable(feedUrl STRING PRIMARY KEY, feedTitle STRING, type STRING, lastSynced INTEGER)`
-    createWebPagesTable = `CREATE TABLE IF NOT EXISTS webPagesTable(fullUrl STRING PRIMARY KEY, pageTitle STRING, fullHTML STRING, contentType STRING, createdWhen INTEGER, sourceApplication STRING, creatorId STRING, metaDataJSON STRING)`
-
-    createAnnotationsTable = `CREATE TABLE IF NOT EXISTS annotationsTable(fullUrl STRING PRIMARY KEY, pageTitle STRING, fullHTML STRING, contentType STRING, createdWhen INTEGER, sourceApplication STRING, creatorId STRING)`
-
-    sourcesDB.run(createRSSsourcesTable, function (err) {
-        if (err) {
-            console.log('err', err)
-        }
-    })
-    sourcesDB.run(createWebPagesTable, function (err) {
-        if (err) {
-            console.log('err', err)
-        }
-    })
-    sourcesDB.run(createAnnotationsTable, function (err) {
-        if (err) {
-            console.log('err', err)
-        }
-    })
-
-    let vectorDB = await lancedb.connect(vectorDBuri)
-    try {
-        try {
-            vectorDocsTable = await vectorDB.openTable(vectorDocsTableName)
-        } catch {
-            if (vectorDocsTable == null) {
-                function generateZeroVector(size) {
-                    return new Array(size).fill(0)
-                }
-
-                let defaultVectorDocument = {
-                    fullurl: 'null',
-                    pagetitle: 'null',
-                    sourceapplication: 'null',
-                    createdwhen: 0,
-                    creatorid: 'null',
-                    contenttype: 'null',
-                    contenttext: 'null',
-                    entities: 'null',
-                    vector: generateZeroVector(768),
-                }
-
-                vectorDocsTable = await vectorDB.createTable(
-                    vectorDocsTableName,
-                    [defaultVectorDocument],
-                )
-            }
-        }
-
-        if ((await vectorDocsTable.countRows()) === 0) {
-            vectorDocsTable.add([defaultVectorDocument])
-        }
-    } catch (error) {
-        console.log('error', error)
-    }
-
-    // sourcesDB.run(
-    //   `CREATE INDEX IF NOT EXISTS entitiesIndex ON webPagesTable(entities)`,
-    //   function(err) {
-    //     if (err) {
-    //       console.log("err", err);
-    //     }
-    //   }
-    // );
-    allTables = {
-        sourcesDB: sourcesDB,
-        vectorDocsTable: vectorDocsTable,
+        embedTextFunction = await initializeModels()
     }
     try {
         startExpress() // Start Express server first
@@ -523,7 +464,6 @@ app.on('ready', async () => {
 })
 
 async function generateEmbeddingFromText(text2embed) {
-    console.log('generateEmbeddingFromText')
     return await generateEmbeddings(text2embed, {
         pooling: 'mean',
         normalize: true,
@@ -534,6 +474,11 @@ async function initializeDatabase() {
     let dbPath = null
 
     if (isPackaged) {
+        if (!fs.existsSync(path.join(app.getPath('userData'), 'data'))) {
+            fs.mkdirSync(path.join(app.getPath('userData'), 'data'), {
+                recursive: true,
+            })
+        }
         dbPath = path.join(app.getPath('userData'), 'data/sourcesDB.db')
         log.log('dbPath', app.getPath('userData'))
         fs.access(
@@ -554,10 +499,89 @@ async function initializeDatabase() {
             },
         )
     } else {
-        dbPath = 'data/sourcesDB.db'
+        if (!fs.existsSync(path.join(__dirname, '..', 'MemexDesktopData'))) {
+            fs.mkdirSync(path.join(__dirname, '..', 'MemexDesktopData'), {
+                recursive: true,
+            })
+        }
+        dbPath = '../MemexDesktopData/sourcesDB.db'
     }
-    console.log('Database initialized at: ', dbPath)
+    console.log('dbPath', dbPath)
     sourcesDB = await AsyncDatabase.open(dbPath)
+    console.log('Database initialized at: ', dbPath)
+
+    // create Tables
+    createRSSsourcesTable = `CREATE TABLE IF NOT EXISTS rssSourcesTable(feedUrl STRING PRIMARY KEY, feedTitle STRING, type STRING, lastSynced INTEGER)`
+    createWebPagesTable = `CREATE TABLE IF NOT EXISTS webPagesTable(fullUrl STRING PRIMARY KEY, pageTitle STRING, fullHTML STRING, contentType STRING, createdWhen INTEGER, sourceApplication STRING, creatorId STRING, metaDataJSON STRING)`
+
+    createAnnotationsTable = `CREATE TABLE IF NOT EXISTS annotationsTable(fullUrl STRING PRIMARY KEY, pageTitle STRING, fullHTML STRING, contentType STRING, createdWhen INTEGER, sourceApplication STRING, creatorId STRING)`
+
+    sourcesDB.run(createRSSsourcesTable, function (err) {
+        if (err) {
+            console.log('err', err)
+        }
+    })
+    sourcesDB.run(createWebPagesTable, function (err) {
+        if (err) {
+            console.log('err', err)
+        }
+    })
+    sourcesDB.run(createAnnotationsTable, function (err) {
+        if (err) {
+            console.log('err', err)
+        }
+    })
+
+    let vectorDB = await lancedb.connect(vectorDBuri)
+
+    try {
+        try {
+            vectorDocsTable = await vectorDB.openTable(vectorDocsTableName)
+        } catch {
+            if (vectorDocsTable == null) {
+                function generateZeroVector(size) {
+                    return new Array(size).fill(0)
+                }
+
+                let defaultVectorDocument = {
+                    fullurl: 'null',
+                    pagetitle: 'null',
+                    sourceapplication: 'null',
+                    createdwhen: 0,
+                    creatorid: 'null',
+                    contenttype: 'null',
+                    contenttext: 'null',
+                    entities: 'null',
+                    vector: generateZeroVector(768),
+                }
+
+                vectorDocsTable = await vectorDB.createTable(
+                    vectorDocsTableName,
+                    [defaultVectorDocument],
+                )
+            }
+        }
+
+        if ((await vectorDocsTable.countRows()) === 0) {
+            vectorDocsTable.add([defaultVectorDocument])
+        }
+    } catch (error) {
+        console.log('error', error)
+    }
+
+    console.log('Vector Database connected at: ', vectorDBuri)
+    // sourcesDB.run(
+    //   `CREATE INDEX IF NOT EXISTS entitiesIndex ON webPagesTable(entities)`,
+    //   function(err) {
+    //     if (err) {
+    //       console.log("err", err);
+    //     }
+    //   }
+    // );
+    allTables = {
+        sourcesDB: sourcesDB,
+        vectorDocsTable: vectorDocsTable,
+    }
 }
 
 async function initializeModels() {
@@ -567,7 +591,14 @@ async function initializeModels() {
     modelEnvironment = env
     modelEnvironment.allowLocalModels = true
 
-    const modelsDir = path.join(app.getPath('userData'), 'models')
+    let modelsDir
+
+    if (isPackaged) {
+        modelsDir = path.join(app.getPath('userData'), 'models')
+    } else {
+        modelsDir = '../MemexDesktopData/models'
+    }
+
     if (!fs.existsSync(modelsDir)) {
         fs.mkdirSync(modelsDir, { recursive: true })
     }
@@ -576,6 +607,8 @@ async function initializeModels() {
         modelsDir,
         'all-mpnet-base-v2_quantized.onnx',
     )
+
+    console.log(`Model file path: ${modelFilePath}`)
 
     if (!fs.existsSync(modelFilePath)) {
         const modelUrl =
@@ -594,7 +627,7 @@ async function initializeModels() {
         console.log('Starting download')
         response.data.pipe(writer)
 
-        return new Promise((resolve, reject) => {
+        new Promise((resolve, reject) => {
             let bytesDownloaded = 0
             response.data.on('data', (chunk) => {
                 bytesDownloaded += chunk.length
@@ -618,7 +651,7 @@ async function initializeModels() {
     }
 
     modelEnvironment.localModelPath = modelFilePath
-    console.log(`Model file path: ${modelFilePath}`)
+    console.log(`Model file path1: ${modelFilePath}`)
 
     generateEmbeddings = await modelPipeline(
         'feature-extraction',
@@ -627,7 +660,9 @@ async function initializeModels() {
 
     embedTextFunction = generateEmbeddingFromText
 
-    return true
+    console.log('embedTextFunction', embedTextFunction)
+
+    return embedTextFunction
 }
 async function extractEntitiesFromText(text2analzye) {
     return await extractEntities(text2analzye)
@@ -667,6 +702,8 @@ expressApp.put('/add_page', async function (req, res) {
     var creatorId = req.body.creatorId
     var sourceApplication = req.body.sourceApplication
     var metadataJSON = ''
+
+    console.log('req.body', req.body)
 
     try {
         await allTables.sourcesDB.run(
@@ -752,7 +789,7 @@ expressApp.post('/get_similar', async function (req, res) {
     if (!checkSyncKey(req.body.syncKey)) {
         return res.status(403).send('Only one app instance allowed')
     }
-    console.log('get_similar')
+    console.log('find_similar', embedTextFunction)
     return await findSimilar(
         req,
         res,
