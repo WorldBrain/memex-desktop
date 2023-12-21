@@ -25,6 +25,8 @@ const path = require('path')
 const log = require('electron-log')
 const lancedb = require('vectordb')
 const dotEnv = require('dotenv')
+const moment = require('moment')
+
 dotEnv.config()
 const settings = require('electron-settings')
 
@@ -67,6 +69,7 @@ let allTables = {
 }
 let mainWindow
 let downloadProgress = 0
+let pdfJS
 
 ////////////////////////////////
 /// TRANSFORMER JS STUFF ///
@@ -284,6 +287,7 @@ app.on('ready', async () => {
         }).show()
         await initializeDatabase()
         await initializeModels()
+        await initializeFileSystemWatchers()
         mainWindow.loadURL(
             url.format({
                 pathname: path.join(
@@ -305,76 +309,7 @@ app.on('ready', async () => {
     } else {
         await initializeDatabase()
         await initializeModels()
-    }
-    // create Tables
-    createRSSsourcesTable = `CREATE TABLE IF NOT EXISTS rssSourcesTable(feedUrl STRING PRIMARY KEY, feedTitle STRING, type STRING, lastSynced INTEGER)`
-    createWebPagesTable = `CREATE TABLE IF NOT EXISTS webPagesTable(fullUrl STRING PRIMARY KEY, pageTitle STRING, fullHTML STRING, contentType STRING, createdWhen INTEGER, sourceApplication STRING, creatorId STRING, metaDataJSON STRING)`
-
-    createAnnotationsTable = `CREATE TABLE IF NOT EXISTS annotationsTable(fullUrl STRING PRIMARY KEY, pageTitle STRING, fullHTML STRING, contentType STRING, createdWhen INTEGER, sourceApplication STRING, creatorId STRING)`
-
-    sourcesDB.run(createRSSsourcesTable, function (err) {
-        if (err) {
-            console.log('err', err)
-        }
-    })
-    sourcesDB.run(createWebPagesTable, function (err) {
-        if (err) {
-            console.log('err', err)
-        }
-    })
-    sourcesDB.run(createAnnotationsTable, function (err) {
-        if (err) {
-            console.log('err', err)
-        }
-    })
-
-    let vectorDB = await lancedb.connect(vectorDBuri)
-    try {
-        try {
-            vectorDocsTable = await vectorDB.openTable(vectorDocsTableName)
-        } catch {
-            if (vectorDocsTable == null) {
-                function generateZeroVector(size) {
-                    return new Array(size).fill(0)
-                }
-
-                let defaultVectorDocument = {
-                    fullurl: 'null',
-                    pagetitle: 'null',
-                    sourceapplication: 'null',
-                    createdwhen: 0,
-                    creatorid: 'null',
-                    contenttype: 'null',
-                    contenttext: 'null',
-                    entities: 'null',
-                    vector: generateZeroVector(768),
-                }
-
-                vectorDocsTable = await vectorDB.createTable(
-                    vectorDocsTableName,
-                    [defaultVectorDocument],
-                )
-            }
-        }
-
-        if ((await vectorDocsTable.countRows()) === 0) {
-            vectorDocsTable.add([defaultVectorDocument])
-        }
-    } catch (error) {
-        console.log('error', error)
-    }
-
-    // sourcesDB.run(
-    //   `CREATE INDEX IF NOT EXISTS entitiesIndex ON webPagesTable(entities)`,
-    //   function(err) {
-    //     if (err) {
-    //       console.log("err", err);
-    //     }
-    //   }
-    // );
-    allTables = {
-        sourcesDB: sourcesDB,
-        vectorDocsTable: vectorDocsTable,
+        await initializeFileSystemWatchers()
     }
     try {
         startExpress() // Start Express server first
@@ -476,40 +411,6 @@ app.on('ready', async () => {
         log.error('error', error)
         app.quit()
     }
-
-    // starting folder watchers:
-    var folderPaths = store.get('folderPaths')
-
-    if (folderPaths) {
-        startWatchers(folderPaths)
-    }
-
-    //general setup of model pipeline needs to be on highest level to be consistent in chunking size for vectors
-    ///
-
-    // // prepare NER extraction model, needs to be on highest level to be consistent in chunking size for vectors
-    // // modelEnvironment.allowRemoteModels = false;
-    // modelEnvironment.localModelPath =
-    //   "./models/bert-base-multilingual-cased-ner-hrl_quantized.onnx";
-
-    // extractEntities = await modelPipeline(
-    //   "token-classification",
-    //   "Xenova/bert-base-multilingual-cased-ner-hrl"
-    // );
-
-    // entityExtractionFunction = await extractEntitiesFromText;
-
-    // console.log(
-    //   await entityExtractionFunction(
-    //     "To wean their country off imported oil and gas, and in the hope of retiring dirty coal-fired power stations, China’s leaders have poured money into wind and solar energy. But they are also turning to one of the most sustainable forms of non-renewable power. Over the past decade China has added 37 nuclear reactors, for a total of 55, according to the International Atomic Energy Agency, a UN body. During that same period America, which leads the world with 93 reactors, added two."
-    //   )
-    // );
-
-    // entityExtractionFunction(
-    //   "In 1945, to wean their country off imported oil and gas, and in the hope of retiring dirty coal-fired power stations, China’s leaders and in particular Xi Xinping and John malcovich have poured money into wind and solar energy and using chemical substances like H20 and co2. But they are also turning to one of the most sustainable forms of non-renewable power. Over the past decade China has added 37 nuclear reactors, for a total of 55, according to the International Atomic Energy Agency, a UN body. During that same period America, which leads the world with 93 reactors, added two."
-    // );
-
-    // setting up all databases and tables
 })
 
 async function generateEmbeddingFromText(text2embed) {
@@ -548,6 +449,97 @@ async function initializeDatabase() {
     }
     console.log('Database initialized at: ', dbPath)
     sourcesDB = await AsyncDatabase.open(dbPath)
+
+    // create Tables
+    createRSSsourcesTable = `CREATE TABLE IF NOT EXISTS rssSourcesTable(feedUrl STRING PRIMARY KEY, feedTitle STRING, type STRING, lastSynced INTEGER)`
+    createWebPagesTable = `CREATE TABLE IF NOT EXISTS webPagesTable(fullUrl STRING PRIMARY KEY, pageTitle STRING, fullHTML STRING, contentType STRING, createdWhen INTEGER, sourceApplication STRING, creatorId STRING, metaDataJSON STRING)`
+
+    createAnnotationsTable = `CREATE TABLE IF NOT EXISTS annotationsTable(fullUrl STRING PRIMARY KEY, pageTitle STRING, fullHTML STRING, contentType STRING, createdWhen INTEGER, sourceApplication STRING, creatorId STRING)`
+    createPDFTable = `CREATE TABLE IF NOT EXISTS pdfTable(id INTEGER PRIMARY KEY, path STRING, fingerPrint STRING, pageTitle STRING, extractedContent STRING, createdWhen INTEGER, sourceApplication STRING, creatorId STRING)`
+
+    sourcesDB.run(createRSSsourcesTable, function (err) {
+        if (err) {
+            console.log('err', err)
+        }
+    })
+    sourcesDB.run(createWebPagesTable, function (err) {
+        if (err) {
+            console.log('err', err)
+        }
+    })
+    sourcesDB.run(createAnnotationsTable, function (err) {
+        if (err) {
+            console.log('err', err)
+        }
+    })
+    sourcesDB.run(createPDFTable, function (err) {
+        if (err) {
+            console.log('err', err)
+        }
+    })
+
+    let createIndexQuery = `CREATE INDEX IF NOT EXISTS idx_pdfTable_fingerPrint ON pdfTable(fingerPrint)`
+    sourcesDB.run(createIndexQuery, function (err) {
+        if (err) {
+            console.log('Error creating index:', err)
+        }
+    })
+    let createIndexQueryForPath = `CREATE INDEX IF NOT EXISTS idx_pdfTable_path ON pdfTable(path)`
+    sourcesDB.run(createIndexQueryForPath, function (err) {
+        if (err) {
+            console.log('Error creating index:', err)
+        }
+    })
+
+    let vectorDB = await lancedb.connect(vectorDBuri)
+    try {
+        try {
+            vectorDocsTable = await vectorDB.openTable(vectorDocsTableName)
+        } catch {
+            if (vectorDocsTable == null) {
+                function generateZeroVector(size) {
+                    return new Array(size).fill(0)
+                }
+
+                let defaultVectorDocument = {
+                    fullurl: 'null',
+                    pagetitle: 'null',
+                    sourceapplication: 'null',
+                    createdwhen: 0,
+                    creatorid: 'null',
+                    contenttype: 'null',
+                    contenttext: 'null',
+                    entities: 'null',
+                    vector: generateZeroVector(768),
+                }
+
+                vectorDocsTable = await vectorDB.createTable(
+                    vectorDocsTableName,
+                    [defaultVectorDocument],
+                )
+            }
+        }
+
+        if ((await vectorDocsTable.countRows()) === 0) {
+            vectorDocsTable.add([defaultVectorDocument])
+        }
+    } catch (error) {
+        console.log('error', error)
+    }
+
+    allTables = {
+        sourcesDB: sourcesDB,
+        vectorDocsTable: vectorDocsTable,
+    }
+}
+
+async function initializeFileSystemWatchers() {
+    // starting folder watchers:
+    var folderPaths = store.get('folderPaths')
+
+    if (folderPaths) {
+        startWatchers(folderPaths, allTables)
+    }
 }
 
 async function initializeModels() {
@@ -618,6 +610,33 @@ async function initializeModels() {
     embedTextFunction = generateEmbeddingFromText
 
     return true
+
+    //general setup of model pipeline needs to be on highest level to be consistent in chunking size for vectors
+    ///
+
+    // // prepare NER extraction model, needs to be on highest level to be consistent in chunking size for vectors
+    // // modelEnvironment.allowRemoteModels = false;
+    // modelEnvironment.localModelPath =
+    //   "./models/bert-base-multilingual-cased-ner-hrl_quantized.onnx";
+
+    // extractEntities = await modelPipeline(
+    //   "token-classification",
+    //   "Xenova/bert-base-multilingual-cased-ner-hrl"
+    // );
+
+    // entityExtractionFunction = await extractEntitiesFromText;
+
+    // console.log(
+    //   await entityExtractionFunction(
+    //     "To wean their country off imported oil and gas, and in the hope of retiring dirty coal-fired power stations, China’s leaders have poured money into wind and solar energy. But they are also turning to one of the most sustainable forms of non-renewable power. Over the past decade China has added 37 nuclear reactors, for a total of 55, according to the International Atomic Energy Agency, a UN body. During that same period America, which leads the world with 93 reactors, added two."
+    //   )
+    // );
+
+    // entityExtractionFunction(
+    //   "In 1945, to wean their country off imported oil and gas, and in the hope of retiring dirty coal-fired power stations, China’s leaders and in particular Xi Xinping and John malcovich have poured money into wind and solar energy and using chemical substances like H20 and co2. But they are also turning to one of the most sustainable forms of non-renewable power. Over the past decade China has added 37 nuclear reactors, for a total of 55, according to the International Atomic Energy Agency, a UN body. During that same period America, which leads the world with 93 reactors, added two."
+    // );
+
+    // setting up all databases and tables
 }
 async function extractEntitiesFromText(text2analzye) {
     return await extractEntities(text2analzye)
@@ -866,6 +885,330 @@ expressApp.get('/get_all_rss_sources', async function (req, res) {
 expressApp.put('/remove_rss_feed', async function (req, res) {
     // logic for how RSS feed is added to the database, and the cron job is set up
 })
+
+expressApp.post('/watch_new_folder', async function (req, res) {
+    const newFolder = await dialog.showOpenDialog({
+        properties: ['openDirectory'],
+    })
+
+    if (!newFolder) {
+        return res.status(500).json({ error: 'Folder selection aborted' })
+    }
+
+    store.push('folderPaths', newFolder)
+    console.log(store.get('folderPaths'))
+    try {
+        var watcher = chokidar.watch(directoryPath, {
+            ignored: /(^|[\/\\])\../, // ignore dotfiles
+            persistent: true,
+        })
+
+        watcher.on('add', async function (path) {
+            console.log('File', path, 'has been added')
+
+            await processFiles(filesAndSubfolders)
+
+            res.status(200).send(path)
+        })
+
+        const filesAndSubfolders = fs.readdirSync(newFolder)
+        await Promise.all(filesAndSubfolders.map(processFiles))
+    } catch (error) {
+        log.error('Error in /watch_new_folder:', error)
+        res.status(500).json({ error: 'Internal server error' })
+    }
+})
+
+async function watchNewFolder() {
+    const newWindow = new BrowserWindow({
+        height: 10,
+        width: 10,
+        transparent: true,
+        frame: false,
+    })
+    newWindow.focus()
+    newWindow.on('close', (event) => {
+        event.preventDefault()
+        newWindow.hide()
+    })
+
+    const newFolderData = await dialog.showOpenDialog(newWindow, {
+        properties: ['openDirectory'],
+    })
+
+    const newFolder = newFolderData.filePaths[0]
+    newWindow.close()
+
+    if (!newFolder) {
+        return false
+    }
+
+    var folderPaths = store.get('folderPaths') || []
+    // if (folderPaths.includes(newFolder)) {
+    //     return
+    // }
+    folderPaths.push(newFolder)
+    folderPaths = Array.from(new Set(folderPaths))
+    store.set('folderPaths', folderPaths)
+    console.log(store.get('folderPaths'))
+    try {
+        const filesAndSubfolders = fs.readdirSync(newFolder)
+        await Promise.all(filesAndSubfolders.map(processFiles))
+        startWatchers([newFolder])
+    } catch (error) {
+        log.error('Error in /watch_new_folder:', error)
+        res.status(500).json({ error: 'Internal server error' })
+    }
+}
+
+async function startWatchers(folders, allTables) {
+    if (!pdfJS) {
+        pdfJS = await import('pdfjs-dist')
+    }
+    // take the given folderPath array and start watchers on each folder
+
+    folders.forEach((folder) => {
+        var watcher = chokidar.watch(folder, {
+            ignored: /(^|[\/\\])\../, // ignore dotfiles
+            persistent: true,
+        })
+        watcher.on('add', async function (path, stats) {
+            await processFiles(path)
+        })
+        watcher.on('change', async function (path, stats) {
+            console.log('File', path, 'has been changed', stats)
+        })
+    })
+}
+
+async function processFiles(file) {
+    const extension = file.split('.').pop()
+    if (extension === 'pdf') {
+        const test = await sourcesDB.get(
+            `SELECT * FROM pdfTable WHERE path = ?`,
+            [file],
+        )
+        if (test === undefined) {
+            const pdfData = fs.readFileSync(file)
+            const uint8Array = new Uint8Array(pdfData.buffer)
+
+            const pdfDoc = await pdfJS.getDocument({ data: uint8Array }).promise
+            // console.log('pdfdoc', pdfDoc)
+            const fingerPrint = pdfDoc._pdfInfo.fingerprints[0]
+            // console.log('pdfdoc', pdfDoc)
+            const metaData = await pdfDoc.getMetadata()
+            let createdWhen = metaData.info.CreationDate || null
+
+            if (createdWhen) {
+                createdWhen = moment(createdWhen).unix()
+            }
+            console.log('metadata', metaData)
+            let title = metaData.info.Title || nullyarn
+
+            // async function getText(pdfUrl) {
+            //     var pdf = pdfDoc
+            //     var maxPages = pdf._pdfInfo.numPages
+            //     var countPromises = [] // collecting all page promises
+            //     var textSections = []
+            //     // get all pages text
+            //     for (var j = 1; j <= maxPages; j++) {
+            //         var page = pdf.getPage(j)
+            //         countPromises.push(
+            //             page.then(function (page) {
+            //                 // add page promise
+            //                 var textContent = page.getTextContent()
+            //                 return textContent.then(function (text) {
+            //                     // return content promise
+            //                     return textSections.push(text.items)
+            //                 })
+            //             }),
+            //         )
+            //     }
+            //     // Wait for all pages and join text
+            //     return Promise.all(countPromises)
+            // }
+
+            let textSections = []
+            async function getText() {
+                var pdf = pdfDoc
+                var maxPages = pdf._pdfInfo.numPages
+                console.log('pages', maxPages)
+                // get all pages text
+                for (var j = 1; j <= maxPages; j++) {
+                    var page = await pdf.getPage(j)
+
+                    var textContent = await page.getTextContent()
+
+                    textSections = [...textSections, ...textContent.items]
+                }
+            }
+
+            await getText()
+
+            let pdfText = []
+
+            let heightCounts = {}
+            textSections.forEach((textSegment) => {
+                let height = textSegment.transform[0]
+                if (heightCounts[height]) {
+                    heightCounts[height]++
+                } else {
+                    heightCounts[height] = 1
+                }
+            })
+
+            console.log('heightCounts', heightCounts)
+
+            let sortedHeights = Object.keys(heightCounts).sort(
+                (a, b) => heightCounts[b] - heightCounts[a],
+            )
+
+            console.log('sortedHeights', sortedHeights)
+
+            let paragraphHeight = sortedHeights[0]
+            let headingHeights = sortedHeights.slice(1)
+            let smallTextHeights = headingHeights.filter((item) => {
+                item < paragraphHeight
+            })
+
+            headingHeights.sort((a, b) => b - a)
+
+            console.log('headingHeights', headingHeights)
+            let textElements = {}
+            textElements[paragraphHeight] = 'paragraph'
+            headingHeights.forEach((height, index) => {
+                textElements[height] = 'Heading' + (index + 1)
+            })
+
+            // Goal: Detect groups of text, e.g. paragraphs
+            // Approach: Use the Y position of chunks as indicator if they are the same sentence and chunk those together
+            // or if the previous chunk was endOf line without any ending punctuation
+            // or if the previous chu
+            // other ideas:
+            // scan the document and find all font sizes, then group by font size, then groupb by order of appearance to find headers, subheaders, etc.
+            // if next item does not have same size, then it is a new paragraph
+            // create a basic JSON structure with headers and paragraphs
+
+            let tempGroup = []
+
+            for (let i = 0; i < textSections?.length; i++) {
+                const textSegment = textSections[i]
+                if (
+                    // When items stop having the same font-Size, it's likely a new section or heading
+                    (textSegment?.transform[0] ===
+                        textSections[i - 1]?.transform[0] ||
+                        textSegment?.transform[0] <= paragraphHeight) &&
+                    textSegment.str !== ''
+                ) {
+                    if (textSegment.hasEOL) {
+                        tempGroup.push(textSegment.str + ' ')
+                    } else {
+                        tempGroup.push(textSegment.str)
+                    }
+                } else {
+                    let matchingTextElement =
+                        textElements[textSections[i - 1]?.height]
+
+                    const groupString = tempGroup.join('')
+
+                    // filter out small chunks that are likely noise
+                    if (groupString.length > 10) {
+                        pdfText.push({
+                            [matchingTextElement]: groupString,
+                        })
+                    }
+                    if (textSegment.height !== 0) {
+                        tempGroup = [textSegment.str]
+                    } else {
+                        tempGroup = []
+                    }
+                }
+            }
+
+            if (!title) {
+                const firstFiveItems = pdfText.slice(0, 5)
+                let lowestHeading = 'heading10'
+                firstFiveItems.forEach((item) => {
+                    const keys = Object.keys(item)
+                    keys.forEach((key) => {
+                        if (key.startsWith('Heading')) {
+                            const headingNumber = parseInt(
+                                key.replace('Heading', ''),
+                            )
+                            console.log('headingNumber', headingNumber)
+                            if (
+                                headingNumber <
+                                parseInt(lowestHeading.replace('heading', ''))
+                            ) {
+                                lowestHeading = key
+                                console.log('lowestHeading', lowestHeading)
+                            }
+                        }
+                    })
+                })
+                title = firstFiveItems.find((item) => 'Heading2' in item)[
+                    'Heading2'
+                ]
+            }
+
+            console.log('pdfText', title)
+
+            if (tempGroup.length > 0) {
+                pdfText.push(tempGroup)
+            }
+
+            const existingFileViaFingerPrint = await sourcesDB.get(
+                `SELECT * FROM pdfTable WHERE fingerPrint = ?`,
+                [fingerPrint],
+            )
+
+            if (!existingFileViaFingerPrint) {
+                // console.log('added new file: ', file)
+                await allTables.sourcesDB.run(
+                    `INSERT INTO pdfTable VALUES(null, ?, ?, ? ,?, ?, ?, ?)`,
+                    [
+                        file,
+                        fingerPrint,
+                        title,
+                        JSON.stringify(pdfText),
+                        createdWhen,
+                        '',
+                        '',
+                    ],
+                )
+            } else {
+                // console.log(
+                //     'existingFileViaFingerPrint',
+                //     existingFileViaFingerPrint,
+                // )
+
+                const existingFilePath =
+                    existingFileViaFingerPrint.path.substring(
+                        0,
+                        existingFileViaFingerPrint.path.lastIndexOf('/'),
+                    )
+                const newFilePath = file.substring(0, file.lastIndexOf('/'))
+
+                if (existingFilePath === newFilePath) {
+                    console.log('this is a rename', file)
+                    console.log('rename file: ', file, fingerPrint)
+                    await allTables.sourcesDB.run(
+                        `UPDATE pdfTable SET path = ? WHERE fingerPrint = ?`,
+                        [file, fingerPrint],
+                    )
+                    console.log('rename done: ', file)
+                }
+            }
+        }
+    } else if (extension === 'md') {
+        console.log('ismarkdown')
+    } else if (extension === 'epub') {
+        console.log('isEpub')
+    } else if (extension === 'mobi') {
+        console.log('isMobi')
+    }
+}
+
 ///////////////////////////
 /// PKM SYNC ENDPOINTS ///
 /////////////////////////
@@ -972,110 +1315,6 @@ expressApp.post('/get-file-content', async function (req, res) {
         res.status(500).json({ error: 'Internal server error' })
     }
 })
-
-expressApp.post('/watch_new_folder', async function (req, res) {
-    const newFolder = await dialog.showOpenDialog({
-        properties: ['openDirectory'],
-    })
-
-    if (!newFolder) {
-        return res.status(500).json({ error: 'Folder selection aborted' })
-    }
-
-    store.push('folderPaths', newFolder)
-    console.log(store.get('folderPaths'))
-    try {
-        var watcher = chokidar.watch(directoryPath, {
-            ignored: /(^|[\/\\])\../, // ignore dotfiles
-            persistent: true,
-        })
-
-        watcher.on('add', async function (path) {
-            console.log('File', path, 'has been added')
-
-            await processFiles(filesAndSubfolders)
-
-            res.status(200).send(path)
-        })
-
-        const filesAndSubfolders = fs.readdirSync(newFolder)
-        await Promise.all(filesAndSubfolders.map(processFiles))
-    } catch (error) {
-        log.error('Error in /watch_new_folder:', error)
-        res.status(500).json({ error: 'Internal server error' })
-    }
-})
-
-async function watchNewFolder() {
-    const newWindow = new BrowserWindow({
-        height: 10,
-        width: 10,
-        transparent: true,
-        frame: false,
-    })
-    newWindow.focus()
-    newWindow.on('close', (event) => {
-        event.preventDefault()
-        newWindow.hide()
-    })
-
-    const newFolderData = await dialog.showOpenDialog(newWindow, {
-        properties: ['openDirectory'],
-    })
-
-    const newFolder = newFolderData.filePaths[0]
-    newWindow.close()
-
-    if (!newFolder) {
-        return false
-    }
-
-    var folderPaths = store.get('folderPaths') || []
-    // if (folderPaths.includes(newFolder)) {
-    //     return
-    // }
-    folderPaths.push(newFolder)
-    folderPaths = Array.from(new Set(folderPaths))
-    store.set('folderPaths', folderPaths)
-    console.log(store.get('folderPaths'))
-    try {
-        const filesAndSubfolders = fs.readdirSync(newFolder)
-        await Promise.all(filesAndSubfolders.map(processFiles))
-        startWatchers([newFolder])
-    } catch (error) {
-        log.error('Error in /watch_new_folder:', error)
-        res.status(500).json({ error: 'Internal server error' })
-    }
-}
-
-async function startWatchers(folders) {
-    // take the given folderPath array and start watchers on each folder
-
-    var watcher = chokidar.watch(folder, {
-        ignored: /(^|[\/\\])\../, // ignore dotfiles
-        persistent: true,
-    })
-    folders.forEach((folder) => {
-        watcher.on('change', async function (path) {
-            console.log('File', path, 'has been added')
-            await processFiles(filesAndSubfolders)
-            res.status(200).send(path)
-        })
-    })
-}
-
-async function processFiles(file) {
-    const extension = file.split('.').pop()
-    if (extension === 'pdf') {
-        console.log('isPDF')
-    } else if (extension === 'md') {
-        console.log('ismarkdown')
-    } else if (extension === 'epub') {
-        console.log('isEpub')
-    } else if (extension === 'mobi') {
-        console.log('isMobi')
-    }
-}
 
 ///////////////////////////
 /// BACKUP ENDPOINTS ///

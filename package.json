@@ -60,7 +60,6 @@
             "x64"
           ]
         }
-       
       ],
       "hardenedRuntime": true,
       "entitlements": "entitlements.mac.inherit.plist"
@@ -93,10 +92,10 @@
       "!data/*",
       "node_modules/@xenova/*"
     ],
-  "files": [
-    "!dist/**/*",
-    "!data/**/*"
-  ]
+    "files": [
+      "!dist/**/*",
+      "!data/**/*"
+    ]
   },
   "repository": {
     "type": "git",
@@ -159,9 +158,11 @@
     "express": "^4.18.2",
     "jsdom": "^23.0.0",
     "mkdirp": "^3.0.1",
+    "moment": "^2.29.4",
     "node-fetch": "^3.3.2",
     "notarytool": "^0.0.4",
     "openai": "^4.20.0",
+    "pdfjs-dist": "^4.0.269",
     "promised-sqlite3": "^2.1.0",
     "sqlite3": "^5.1.6",
     "stopwords-iso": "^1.1.0",
