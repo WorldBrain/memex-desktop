@@ -5,7 +5,7 @@ const {
 const log = require('electron-log')
 const TurndownService = require('turndown')
 
-async function indexDocument(
+async function indexDocument({
     fullUrlInput,
     pageTitleInput,
     fullHTMLInput,
@@ -16,7 +16,7 @@ async function indexDocument(
     embedTextFunction,
     allTables,
     entityExtractionFunction,
-) {
+}) {
     let fullUrl = fullUrlInput || ''
     let pageTitle = pageTitleInput || ''
     let createdWhen = createdWhenInput || ''
@@ -24,34 +24,32 @@ async function indexDocument(
     let creatorId = creatorIdInput || ''
     let sourceApplication = sourceApplicationInput || ''
     let fullHTML = fullHTMLInput || ''
-
     try {
-        if (!fullHTML) {
-            try {
-                var response = await fetch(fullUrl)
-                fullHTML = await response.text()
-            } catch (error) {
-                console.error(error)
-            }
-        }
         var contentChunks = []
         if (contentType === 'annotation') {
             var turndownService = new TurndownService()
             contentChunks = [turndownService.turndown(fullHTML)]
+        } else if (contentType === 'pdf') {
+            fullHTML = JSON.parse(fullHTML)
+            contentChunks = fullHTML.map((item) => Object.values(item)[0])
         } else {
+            if (!fullHTML) {
+                try {
+                    var response = await fetch(fullUrl)
+                    fullHTML = await response.text()
+                } catch (error) {
+                    console.error(error)
+                }
+            }
             contentChunks = await splitContentInReasonableChunks(fullHTML)
         }
 
-        console.log('contentChunks', contentChunks)
+        if (contentChunks.length === 0) {
+            return false
+        }
 
         const chunksToWrite = []
         for (let chunk of contentChunks) {
-            // const entitiesForChunk = await extractEntitiesFromText(
-            //   pageTitle + chunk,
-            //   entityExtractionFunction
-            // );
-
-            // const embeddedChunk = await embedTextFunction(entitiesForChunk);
             const embeddedChunk = await embedTextFunction(pageTitle + chunk)
             const vectors = embeddedChunk[0].data
 
@@ -63,49 +61,34 @@ async function indexDocument(
                 creatorid: creatorId || '',
                 contenttype: contentType || '',
                 contenttext: chunk,
-                // entities: JSON.stringify(entitiesForChunk),
                 entities: '',
                 vector: Array.from(vectors),
             }
 
-            // console.log("documentToIndex", {
-            //   fullurl: documentToIndex.fullurl,
-            //   pagetitle: documentToIndex.pagetitle,
-            //   sourceapplication: documentToIndex.sourceapplication,
-            //   createdwhen: documentToIndex.createdwhen,
-            //   creatorid: documentToIndex.creatorid,
-            //   contenttype: documentToIndex.contenttype,
-            //   contenttext: documentToIndex.contenttext,
-            //   entities: documentToIndex.entities,
-            // });
+            // console.log('documentToIndex', {
+            //     fullurl: documentToIndex.fullurl,
+            //     pagetitle: documentToIndex.pagetitle,
+            //     sourceapplication: documentToIndex.sourceapplication,
+            //     createdwhen: documentToIndex.createdwhen,
+            //     creatorid: documentToIndex.creatorid,
+            //     contenttype: documentToIndex.contenttype,
+            //     contenttext: documentToIndex.contenttext,
+            //     entities: documentToIndex.entities,
+            // })
 
             chunksToWrite.push(documentToIndex)
         }
+
         const vectorDocsTable = allTables.vectorDocsTable
         if (vectorDocsTable) {
             await vectorDocsTable.add(chunksToWrite)
-            await new Promise((resolve) => setTimeout(resolve, 500))
+            await new Promise((resolve) => setTimeout(resolve, 100))
             await vectorDocsTable.cleanupOldVersions(1)
         }
-        // for (const promise of updatePromises) {
-        //   try {
-        //     await new Promise((resolve) => setTimeout(resolve, 100));
-        //     await promise;
-        //   } catch (error) {
-        //     console.error("An error occurred:", error);
-        //   }
-        // }
-
-        // await allTables.sourcesDB.run(
-        //   `UPDATE webPagesTable SET entities = ? WHERE fullUrl = ?`,
-        //   [JSON.stringify(entities), fullUrl]
-        // );
-
         console.log('Successfully indexed: ', fullUrl)
         log.log('Successfully indexed: ', fullUrl)
         return true
     } catch (error) {
-        console.log('error', error)
         console.log('Failure indexing: ', fullUrl, ' ', error)
         log.log('Failure indexed: ', fullUrl, ' ', error)
         return false

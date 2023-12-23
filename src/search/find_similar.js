@@ -54,20 +54,32 @@ async function findSimilar(
             }, {}),
         )
 
-        filteredResult = filteredResult.map(function (item) {
-            return {
-                fullUrl: item.fullurl,
-                pageTitle: item.pagetitle,
-                contentText: item.contenttext,
-                createdWhen: item.createdwhen,
-                contentType: item.contenttype,
-                sourceApplication: item.sourceApplication,
-                creatorId: item.creatorid,
-                distance: item._distance,
-                entities: item.entities,
-            }
-        })
+        filteredResult = await Promise.all(
+            filteredResult.map(async function (item) {
+                let path = ''
+                if (item.contenttype === 'pdf') {
+                    path = await allTables.sourcesDB.get(
+                        `SELECT path FROM pdfTable WHERE fingerPrint = ?`,
+                        [item.fullurl],
+                    )
+                }
 
+                return {
+                    fullUrl: item.fullurl,
+                    pageTitle: item.pagetitle,
+                    contentText: item.contenttext,
+                    createdWhen: item.createdwhen,
+                    contentType: item.contenttype,
+                    sourceApplication: item.sourceApplication,
+                    creatorId: item.creatorid,
+                    distance: item._distance,
+                    entities: item.entities,
+                    path: path.path,
+                }
+            }),
+        )
+
+        console.log('filteredResult', filteredResult)
         return res.status(200).send(filteredResult)
     } catch (error) {
         log.error('Error in /find_similar', error)
