@@ -72,13 +72,15 @@ let allTables = {
     sourcesDB: sourcesDB,
     vectorDocsTable: vectorDocsTable,
 }
-
 ////////////////////////////////
-/// PDF indexing ///
+/// FOLDERWATCHING SETUP///
 ////////////////////////////////
 
 let pdfJS
 const { processPDF } = require('./indexing_pipeline/pdf_indexing.js')
+let processingQueue = Promise.resolve()
+
+let folderWatchers = {}
 
 ////////////////////////////////
 /// TRANSFORMER JS STUFF ///
@@ -92,12 +94,6 @@ let embedTextFunction
 let generateEmbeddings
 let extractEntities
 let entityExtractionFunction
-
-////////////////////////////////
-/// FOLDERWATCHING SETUP///
-////////////////////////////////
-
-let folderWatchers = {}
 
 ////////////////////////////////
 /// ELECTRON APP BASIC SETUP ///
@@ -484,6 +480,8 @@ async function initializeDatabase() {
         `
     await sourcesDB.run(createRSSsourcesTable)
 
+    // create the websites table
+
     createWebPagesTable = `CREATE TABLE IF NOT EXISTS webPagesTable(
         fullUrl STRING PRIMARY KEY, 
         pageTitle STRING, 
@@ -496,6 +494,8 @@ async function initializeDatabase() {
     `
     await sourcesDB.run(createWebPagesTable)
 
+    // create the annotations table
+
     createAnnotationsTable = `CREATE TABLE IF NOT EXISTS annotationsTable(
         fullUrl STRING PRIMARY KEY, 
         pageTitle STRING, 
@@ -507,6 +507,8 @@ async function initializeDatabase() {
         `
     await sourcesDB.run(createAnnotationsTable)
 
+    // create the pdf document table
+
     createPDFTable = `CREATE TABLE IF NOT EXISTS pdfTable(
             id INTEGER PRIMARY KEY, 
             path STRING, 
@@ -515,7 +517,8 @@ async function initializeDatabase() {
             extractedContent STRING, 
             createdWhen INTEGER, 
             sourceApplication STRING, 
-            creatorId STRING
+            creatorId STRING,
+            metaDataJSON STRING
             )
             `
     await sourcesDB.run(createPDFTable)
@@ -525,6 +528,8 @@ async function initializeDatabase() {
     let createIndexQueryForPath = `CREATE INDEX IF NOT EXISTS idx_pdfTable_path ON pdfTable(path)`
     await sourcesDB.run(createIndexQueryForPath)
 
+    // Create the folders to watch table
+
     createFoldersTable = `CREATE TABLE IF NOT EXISTS watchedFoldersTable(
         id INTEGER PRIMARY KEY,
         path STRING,
@@ -532,6 +537,23 @@ async function initializeDatabase() {
     `
 
     await sourcesDB.run(createFoldersTable)
+
+    // create the markdown table
+    createMarkdownTable = `CREATE TABLE IF NOT EXISTS markdownDocsTable(
+        id INTEGER PRIMARY KEY,
+        path STRING,
+        pageTitle STRING,
+        content STRING,
+        sourceApplication STRING, 
+        createdWhen INTEGER, 
+        creatorId STRING,
+        metaDataJSON STRING
+        )
+    `
+
+    await sourcesDB.run(createMarkdownTable)
+    let createIndexForMarkdownPath = `CREATE INDEX IF NOT EXISTS idx_markdownDocsTable_path ON markdownDocsTable(path)`
+    await sourcesDB.run(createIndexForMarkdownPath)
 
     console.log('Database initialized at: ', dbPath)
     let vectorDB = await lancedb.connect(vectorDBuri)
@@ -1081,7 +1103,7 @@ async function watchNewFolder() {
     let id = result.lastID
 
     try {
-        startWatchers([newFolder])
+        startWatchers([{ type: type, path: newFolder }])
     } catch (error) {
         log.error('Error in /watch_new_folder:', error)
     }
@@ -1103,13 +1125,12 @@ async function startWatchers(folders, allTables) {
     // take the given folderPath array and start watchers on each folder
     folders?.length > 0 &&
         folders?.forEach((folder) => {
-            var watcher = chokidar.watch(folder, {
+            var watcher = chokidar.watch(folder.path, {
                 ignored: /(^|[\/\\])\../, // ignore dotfiles
                 persistent: true,
             })
 
-            folderWatchers[folder] = watcher
-            let processingQueue = Promise.resolve()
+            folderWatchers[folder.path] = watcher
 
             watcher.on('add', async function (path, stats) {
                 // found no other way to wait for the deletion here so there are no race conditions for updated files
@@ -1139,41 +1160,64 @@ async function startWatchers(folders, allTables) {
                     console.error(error)
                 }
 
+                console.log('Processing file added to filesystem: ', path)
+
                 processingQueue = processingQueue.then(() =>
-                    processFiles(path, pdfJS),
+                    // rename is a deletion and re-addition in the events, no rename unfortunately
+                    processFiles(path, folder.type, pdfJS, 'addOrRename'),
                 )
             })
             watcher.on('unlink', async function (path, stats) {
+                console.log('Deletion of file started: ', path)
                 deletionInProgress = true
 
-                const fingerPrint = await sourcesDB.get(
-                    `SELECT fingerPrint FROM pdfTable WHERE path = ?`,
-                    [path],
-                )
+                if (path.endsWith('.pdf')) {
+                    const fingerPrint = await sourcesDB.get(
+                        `SELECT fingerPrint FROM pdfTable WHERE path = ?`,
+                        [path],
+                    )
 
-                await allTables.vectorDocsTable.delete(
-                    `fullurl = '${fingerPrint.fingerPrint.toString()}'`,
-                )
+                    await allTables.vectorDocsTable.delete(
+                        `fullurl = '${fingerPrint.fingerPrint.toString()}'`,
+                    )
 
-                await allTables.sourcesDB.run(
-                    `DELETE FROM pdfTable WHERE path = ?`,
-                    [path],
-                )
-                deletionInProgress = false
-                console.log('deletion done: ', path)
+                    await allTables.sourcesDB.run(
+                        `DELETE FROM pdfTable WHERE path = ?`,
+                        [path],
+                    )
+
+                    deletionInProgress = false
+                    console.log('deletion done: ', path)
+                    return
+                }
+
+                if (path.endsWith('.md')) {
+                    // await allTables.sourcesDB.run(
+                    //     `DELETE FROM markdownDocsTable WHERE path = ?`,
+                    //     [path],
+                    // )
+                    deletionInProgress = false
+                    // console.log('deletion done: ', path)
+                    return
+                }
             })
             watcher.on('change', async function (path, stats) {
                 console.log('File', path, 'has been changed', stats)
+                processingQueue = processingQueue.then(() =>
+                    processFiles(path, folder.type, pdfJS, 'contentChange'),
+                )
             })
         })
+    console.log('watchers setup: ', Object.keys(folderWatchers).length)
 }
 
-async function processFiles(file, pdfJS) {
+async function processFiles(file, type, pdfJS) {
     const extension = file.split('.').pop()
     if (extension === 'pdf') {
         await processPDF(file, allTables, pdfJS, embedTextFunction)
         return
     } else if (extension === 'md') {
+        processMarkdown(file, type, allTables, embedTextFunction)
     } else if (extension === 'epub') {
     } else if (extension === 'mobi') {
     }
