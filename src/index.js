@@ -94,6 +94,12 @@ let extractEntities
 let entityExtractionFunction
 
 ////////////////////////////////
+/// FOLDERWATCHING SETUP///
+////////////////////////////////
+
+let folderWatchers = {}
+
+////////////////////////////////
 /// ELECTRON APP BASIC SETUP ///
 ////////////////////////////////
 
@@ -317,6 +323,10 @@ app.on('ready', async () => {
         await initializeDatabase()
         embedTextFunction = await initializeModels()
     }
+    console.log('after')
+    if (!allTables.sourcesDB || !allTables.vectorDocsTable) {
+        return
+    }
     await initializeFileSystemWatchers()
     try {
         startExpress() // Start Express server first
@@ -463,9 +473,6 @@ async function initializeDatabase() {
         }
         dbPath = '../MemexDesktopData/sourcesDB.db'
     }
-    console.log('dbPath', dbPath)
-    sourcesDB = await AsyncDatabase.open(dbPath)
-    console.log('Database initialized at: ', dbPath)
     sourcesDB = await AsyncDatabase.open(dbPath)
 
     // create Tables
@@ -474,7 +481,8 @@ async function initializeDatabase() {
         feedTitle STRING, 
         type STRING, 
         lastSynced INTEGER)
-    `
+        `
+    await sourcesDB.run(createRSSsourcesTable)
 
     createWebPagesTable = `CREATE TABLE IF NOT EXISTS webPagesTable(
         fullUrl STRING PRIMARY KEY, 
@@ -486,6 +494,7 @@ async function initializeDatabase() {
         creatorId STRING, 
         metaDataJSON STRING)
     `
+    await sourcesDB.run(createWebPagesTable)
 
     createAnnotationsTable = `CREATE TABLE IF NOT EXISTS annotationsTable(
         fullUrl STRING PRIMARY KEY, 
@@ -495,58 +504,36 @@ async function initializeDatabase() {
         createdWhen INTEGER, 
         sourceApplication STRING, 
         creatorId STRING)
-    `
+        `
+    await sourcesDB.run(createAnnotationsTable)
 
     createPDFTable = `CREATE TABLE IF NOT EXISTS pdfTable(
-        id INTEGER PRIMARY KEY, 
-        path STRING, 
-        fingerPrint STRING, 
-        pageTitle STRING, 
-        extractedContent STRING, 
-        createdWhen INTEGER, 
-        sourceApplication STRING, 
-        creatorId STRING)
+            id INTEGER PRIMARY KEY, 
+            path STRING, 
+            fingerPrint STRING, 
+            pageTitle STRING, 
+            extractedContent STRING, 
+            createdWhen INTEGER, 
+            sourceApplication STRING, 
+            creatorId STRING
+            )
+            `
+    await sourcesDB.run(createPDFTable)
+    let createIndexQuery = `CREATE INDEX IF NOT EXISTS idx_pdfTable_fingerPrint ON pdfTable(fingerPrint)`
+    await sourcesDB.run(createIndexQuery)
+
+    let createIndexQueryForPath = `CREATE INDEX IF NOT EXISTS idx_pdfTable_path ON pdfTable(path)`
+    await sourcesDB.run(createIndexQueryForPath)
+
+    createFoldersTable = `CREATE TABLE IF NOT EXISTS watchedFoldersTable(
+        id INTEGER PRIMARY KEY,
+        path STRING,
+        type STRING)
     `
 
-    sourcesDB.run(createRSSsourcesTable, function (err) {
-        if (err) {
-            console.log('err', err)
-        }
-    })
-    sourcesDB.run(createWebPagesTable, function (err) {
-        if (err) {
-            console.log('err', err)
-        }
-    })
-    sourcesDB.run(createAnnotationsTable, function (err) {
-        if (err) {
-            console.log('err', err)
-        }
-    })
-    sourcesDB.run(createPDFTable, function (err) {
-        if (err) {
-            console.log('err', err)
-        }
-    })
+    await sourcesDB.run(createFoldersTable)
 
-    let createIndexQuery = `CREATE INDEX IF NOT EXISTS idx_pdfTable_fingerPrint ON pdfTable(fingerPrint)`
-
-    sourcesDB.run(createIndexQuery, function (err) {
-        if (err) {
-            console.log('Error creating index:', err)
-        } else {
-            console.log('Index created: idx_pdfTable_fingerPrint')
-        }
-    })
-    let createIndexQueryForPath = `CREATE INDEX IF NOT EXISTS idx_pdfTable_path ON pdfTable(path)`
-    sourcesDB.run(createIndexQueryForPath, function (err) {
-        if (err) {
-            console.log('Error creating index:', err)
-        } else {
-            console.log('Index created: idx_pdfTable_path')
-        }
-    })
-
+    console.log('Database initialized at: ', dbPath)
     let vectorDB = await lancedb.connect(vectorDBuri)
     try {
         try {
@@ -587,14 +574,27 @@ async function initializeDatabase() {
         sourcesDB: sourcesDB,
         vectorDocsTable: vectorDocsTable,
     }
+    return
 }
 
 async function initializeFileSystemWatchers() {
     // starting folder watchers:
-    var folderPaths = store.get('folderPaths')
+    let folderPaths = await sourcesDB.all(
+        `SELECT * FROM watchedFoldersTable`,
+        function (err, rows) {
+            if (err) {
+                return console.log(err.message)
+            }
+            // rows contains all entries in the table
+            console.log(rows)
+        },
+    )
+
+    const folders = []
+    folderPaths.map((folder) => folders.push(folder.path))
 
     if (folderPaths) {
-        startWatchers(folderPaths, allTables)
+        startWatchers(folders, allTables)
     }
 }
 
@@ -945,7 +945,7 @@ expressApp.get('/get_all_rss_sources', async function (req, res) {
         return res.status(500).json({ error: error })
     }
 })
-expressApp.put('/remove_rss_feed', async function (req, res) {
+expressApp.put('/remove_feed_source', async function (req, res) {
     if (!checkSyncKey(req.body.syncKey)) {
         return res.status(403).send('Only one app instance allowed')
     }
@@ -973,19 +973,51 @@ expressApp.post('/open_file', async function (req, res) {
     // logic for how RSS feed is added to the database, and the cron job is set up
 })
 
+expressApp.post('/fetch_all_folders', async function (req, res) {
+    const folders = await sourcesDB.all(
+        `SELECT * FROM watchedFoldersTable`,
+        function (err, rows) {
+            if (err) {
+                return console.log(err.message)
+            }
+            // rows contains all entries in the table
+            console.log(rows)
+        },
+    )
+
+    console.log('folders', folders)
+
+    return res.status(200).json(folders)
+})
+
 expressApp.post('/watch_new_folder', async function (req, res) {
-    const newFolder = await dialog.showOpenDialog({
-        properties: ['openDirectory'],
-    })
+    const folder = await watchNewFolder()
 
-    if (!newFolder) {
-        return res.status(500).json({ error: 'Folder selection aborted' })
-    }
+    return res.status(200).json(folder)
+})
 
-    watchNewFolder(newFolder)
+// this is added as a global object so we can store all the watcher processes to cancel again later if needed
+
+expressApp.post('/remove_folder_to_watch', async function (req, res) {
+    const body = req.body
+    const id = body.id
+    const originalDocument = await sourcesDB.get(
+        'SELECT path FROM watchedFoldersTable WHERE id = ?',
+        [id],
+    )
+
+    let watcherToKill = folderWatchers[originalDocument.path]
+
+    watcherToKill.close()
+
+    await sourcesDB.run('DELETE FROM watchedFoldersTable WHERE id = ?', [id])
+
+    delete folderWatchers[originalDocument.path]
+    return res.status(200).json({ success: true })
 })
 
 async function watchNewFolder() {
+    // Shadowopen a window otherwise the folderselect will not show
     const newWindow = new BrowserWindow({
         height: 10,
         width: 10,
@@ -998,31 +1030,69 @@ async function watchNewFolder() {
         newWindow.hide()
     })
 
+    // select new folder
     const newFolderData = await dialog.showOpenDialog(newWindow, {
         properties: ['openDirectory'],
     })
 
-    const newFolder = newFolderData.filePaths[0]
+    let newFolder = newFolderData.filePaths[0]
     newWindow.close()
 
     if (!newFolder) {
         return false
     }
 
-    var folderPaths = store.get('folderPaths') || []
-    // if (folderPaths.includes(newFolder)) {
-    //     return
-    // }
-    folderPaths.push(newFolder)
-    folderPaths = Array.from(new Set(folderPaths))
-    store.set('folderPaths', folderPaths)
-    console.log(store.get('folderPaths'))
+    // determine folder type
+    let type = 'local'
+    const obsidianFolder = path.join(newFolder, '.obsidian')
+    const logseqFolder = path.join(newFolder, 'logseq')
+
+    if (fs.existsSync(obsidianFolder)) {
+        type = 'obsidian'
+    } else if (fs.existsSync(logseqFolder)) {
+        type = 'logseq'
+        newFolder = logseqFolder + '/pages'
+    }
+
+    // check if the folder is already saved
+    let folders = []
+    folders = await sourcesDB.all(
+        `SELECT * FROM watchedFoldersTable`,
+        function (err, rows) {
+            if (err) {
+                return console.log(err.message)
+            }
+            // rows contains all entries in the table
+            console.log(rows)
+        },
+    )
+
+    var folderPaths = folders ? folders.map((folder) => folder.path) : []
+    if (folderPaths.includes(newFolder)) {
+        return
+    }
+
+    // if ew folder, add to database
+
+    let result = await sourcesDB.run(
+        `INSERT INTO watchedFoldersTable(path, type) VALUES(?, ?)`,
+        [newFolder, type],
+    )
+    let id = result.lastID
+
     try {
         startWatchers([newFolder])
     } catch (error) {
         log.error('Error in /watch_new_folder:', error)
-        res.status(500).json({ error: 'Internal server error' })
     }
+
+    const newFolderObject = {
+        path: newFolder,
+        type: type,
+        id: id,
+    }
+
+    return newFolderObject
 }
 
 async function startWatchers(folders, allTables) {
@@ -1031,85 +1101,81 @@ async function startWatchers(folders, allTables) {
     }
     let deletionInProgress = false
     // take the given folderPath array and start watchers on each folder
-    console.log('folders', folders)
-    folders.forEach((folder) => {
-        var watcher = chokidar.watch(folder, {
-            ignored: /(^|[\/\\])\../, // ignore dotfiles
-            persistent: true,
+    folders?.length > 0 &&
+        folders?.forEach((folder) => {
+            var watcher = chokidar.watch(folder, {
+                ignored: /(^|[\/\\])\../, // ignore dotfiles
+                persistent: true,
+            })
+
+            folderWatchers[folder] = watcher
+            let processingQueue = Promise.resolve()
+
+            watcher.on('add', async function (path, stats) {
+                // found no other way to wait for the deletion here so there are no race conditions for updated files
+                let retryCount = 0
+                const maxRetries = 20
+
+                const waitForDeletion = () => {
+                    return new Promise((resolve, reject) => {
+                        if (!deletionInProgress) {
+                            resolve()
+                        } else if (retryCount >= maxRetries) {
+                            reject(new Error('Max retries reached'))
+                        } else {
+                            setTimeout(() => {
+                                retryCount++
+                                waitForDeletion().then(resolve).catch(reject)
+                            }, 500)
+                        }
+                    })
+                }
+
+                try {
+                    await waitForDeletion()
+                    // Continue processing after deletion is complete
+                } catch (error) {
+                    // Handle error if max retries reached
+                    console.error(error)
+                }
+
+                processingQueue = processingQueue.then(() =>
+                    processFiles(path, pdfJS),
+                )
+            })
+            watcher.on('unlink', async function (path, stats) {
+                deletionInProgress = true
+
+                const fingerPrint = await sourcesDB.get(
+                    `SELECT fingerPrint FROM pdfTable WHERE path = ?`,
+                    [path],
+                )
+
+                await allTables.vectorDocsTable.delete(
+                    `fullurl = '${fingerPrint.fingerPrint.toString()}'`,
+                )
+
+                await allTables.sourcesDB.run(
+                    `DELETE FROM pdfTable WHERE path = ?`,
+                    [path],
+                )
+                deletionInProgress = false
+                console.log('deletion done: ', path)
+            })
+            watcher.on('change', async function (path, stats) {
+                console.log('File', path, 'has been changed', stats)
+            })
         })
-        let processingQueue = Promise.resolve()
-
-        watcher.on('add', async function (path, stats) {
-            // found no other way to wait for the deletion here so there are no race conditions for updated files
-            let retryCount = 0
-            const maxRetries = 20
-
-            const waitForDeletion = () => {
-                return new Promise((resolve, reject) => {
-                    if (!deletionInProgress) {
-                        resolve()
-                    } else if (retryCount >= maxRetries) {
-                        reject(new Error('Max retries reached'))
-                    } else {
-                        setTimeout(() => {
-                            retryCount++
-                            waitForDeletion().then(resolve).catch(reject)
-                        }, 500)
-                    }
-                })
-            }
-
-            try {
-                await waitForDeletion()
-                // Continue processing after deletion is complete
-            } catch (error) {
-                // Handle error if max retries reached
-                console.error(error)
-            }
-
-            processingQueue = processingQueue.then(() =>
-                processFiles(path, pdfJS),
-            )
-        })
-        watcher.on('unlink', async function (path, stats) {
-            deletionInProgress = true
-
-            const fingerPrint = await sourcesDB.get(
-                `SELECT fingerPrint FROM pdfTable WHERE path = ?`,
-                [path],
-            )
-
-            // 5496d4a611065bbe8179ab354caeff07
-
-            await allTables.vectorDocsTable.delete(
-                `fullurl = '${fingerPrint.fingerPrint.toString()}'`,
-            )
-
-            await allTables.sourcesDB.run(
-                `DELETE FROM pdfTable WHERE path = ?`,
-                [path],
-            )
-            deletionInProgress = false
-            console.log('deletion done: ', path)
-        })
-        watcher.on('change', async function (path, stats) {
-            console.log('File', path, 'has been changed', stats)
-        })
-    })
 }
 
 async function processFiles(file, pdfJS) {
     const extension = file.split('.').pop()
     if (extension === 'pdf') {
-        console.log('start adding new file', file)
         await processPDF(file, allTables, pdfJS, embedTextFunction)
         return
     } else if (extension === 'md') {
-        console.log('ismarkdown')
     } else if (extension === 'epub') {
-        console.log('isEpub')
     } else if (extension === 'mobi') {
-        console.log('isMobi')
     }
 }
 
