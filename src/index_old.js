@@ -16,7 +16,6 @@ const {
 } = electron
 const url = require('url')
 
-const isPackaged = app.isPackaged
 const xml2js = require('xml2js')
 const autoUpdater = require('electron-updater').autoUpdater
 const Store = require('electron-store')
@@ -85,6 +84,9 @@ let folderWatchers = {}
 ////////////////////////////////
 /// TRANSFORMER JS STUFF ///
 ////////////////////////////////
+
+import { pipeline, env } from '@xenova/transformers'
+
 // Setup
 let modelPipeline
 let modelEnvironment

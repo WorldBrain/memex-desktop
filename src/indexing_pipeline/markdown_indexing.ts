@@ -1,21 +1,27 @@
-const fs = require('fs')
-const moment = require('moment')
-const { indexDocument } = require('./index.js')
+import fs from 'fs'
+import moment from 'moment'
+import path from 'path'
+import { indexDocument } from './index.js'
+
+interface AllTables {
+    sourcesDB: any
+    vectorDocsTable: any
+}
 
 async function processMarkdown(
-    file,
-    type,
-    allTables,
-    pdfJS,
-    embedTextFunction,
-) {
+    file: string,
+    allTables: AllTables,
+    pdfJS: any,
+    embedTextFunction: (text: string) => Promise<any>,
+    sourceApplication: string,
+    changeType: 'addOrRename' | 'contentChange',
+): Promise<void> {
     const sourcesDB = allTables.sourcesDB
 
     // get base information of PDF
     const markdownFileData = fs.readFileSync(file)
 
     // define the title by it's filename
-    const path = require('path')
     const title = path.basename(file, path.extname(file))
 
     // get the markdown text
@@ -25,27 +31,16 @@ async function processMarkdown(
     const stats = fs.statSync(file)
     console.log('stats', stats)
     const createdWhen = moment(stats.birthtime).valueOf()
-
-    // SourceApplication
-    let sourceApplication
-
-    if (type === 'logseq') {
-        sourceApplication = 'logseq'
-    } else if (type === 'obsidian') {
-        sourceApplication = 'obsidian'
-    }
-
     // save the document to the sourcesDB markdownDocsTable
-
     await allTables.sourcesDB.run(
         `INSERT OR REPLACE INTO markdownDocsTable VALUES (NULL, ?, ?, ?, 'localMarkdown', ?, ?, ?)`,
         [file, title, markdown, sourceApplication, createdWhen, '1', ''],
     )
 
-    // chunk it up by using any double \n as the delimiter, except when the previous item was a headline, then includ it
+    // chunk it up by using any double \n as the delimiter, except when the previous item was a headline, then include it
     // also include the last headline in every chunk until a new headline is found
     const chunks = markdown.split('\n\n')
-    let chunkedMarkdown = []
+    let chunkedMarkdown: string[] = []
     let lastHeadline = ''
 
     chunks.forEach((chunk) => {
@@ -68,7 +63,7 @@ async function processMarkdown(
 
     // await allTables.vectorDocsTable.delete(
     //     `fullurl = '${fingerPrint.fingerPrint.toString()}'`,
-    // )
+    // );
 
     // const documentToSave = {
     //     path: file || '',
@@ -92,8 +87,8 @@ async function processMarkdown(
     //         documentToSave.sourceapplication,
     //         documentToSave.creatorid,
     //     ],
-    // )
-    // console.log('PDF saved to Sqlite DB', documentToSave.fullurl)
+    // );
+    // console.log('PDF saved to Sqlite DB', documentToSave.fullurl);
 
     // await indexDocument({
     //     fullUrlInput: documentToSave.fullurl,
@@ -106,10 +101,10 @@ async function processMarkdown(
     //     embedTextFunction: embedTextFunction,
     //     allTables: allTables,
     //     entityExtractionFunction: null,
-    // })
-    // console.log('PDF indexed in Vector DB', documentToSave.fullurl)
+    // });
+    // console.log('PDF indexed in Vector DB', documentToSave.fullurl);
 
-    // return documentToSave
+    // return documentToSave;
 }
 
-module.exports = { processMarkdown }
+export { processMarkdown }

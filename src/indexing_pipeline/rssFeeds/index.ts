@@ -1,35 +1,52 @@
-// function that takes a new RSS feed source and saves it, puts it into the cron job and regularly fetches it
+import { indexDocument } from '../index.js'
+import { cleanFullHTML } from '../utils.js'
+import * as xml2js from 'xml2js'
+import * as cheerio from 'cheerio'
+import { extract as extractFeed } from '@extractus/feed-extractor'
+import * as log from 'electron-log'
 
-const { indexDocument } = require('../index.js')
-const { cleanFullHTML } = require('../utils.js')
-const xml2js = require('xml2js')
-const jsdom = require('jsdom')
-const cheerio = require('cheerio')
-const { extract: extractFeed } = require('@extractus/feed-extractor')
-const log = require('electron-log')
+interface Tables {
+    rssSourcesTable: any
+    sourcesDB: any
+}
 
-async function getAllRSSSources(allTables) {
+interface FeedData {
+    feedUrl: string
+    feedTitle: string
+    lastSynced: null | Date
+}
+
+interface PageData {
+    fullHTML: string
+    cleanHTML: string
+    fullUrl: string
+    pageTitle?: string
+    contentType: string
+    createdWhen: number
+    sourceApplication: string
+    creatorId: string | undefined
+    metaDataJSON: string
+}
+
+async function getAllRSSSources(allTables: Tables): Promise<any> {
     const rssSourcesTable = allTables.rssSourcesTable
     const allRSSSources = await rssSourcesTable.getAll()
 
     return allRSSSources
 }
 
-// TODO: Need some way to support generic pagination
 async function addFeedSource(
-    feedUrl,
-    feedTitle,
-    embedTextFunction,
-    allTables,
-    type,
-    entityExtractionFunction,
-) {
+    feedUrl: string,
+    feedTitle: string,
+    embedTextFunction: Function,
+    allTables: Tables,
+    type: string,
+    entityExtractionFunction: Function,
+): Promise<boolean> {
     try {
-        // check if the RSS feed source already exists in the database
         const sourcesDB = allTables.sourcesDB
 
-        // check if feed entry already exists
-        let existingEndpoint
+        let existingEndpoint: any
         try {
             existingEndpoint = await sourcesDB.get(
                 `SELECT * FROM rssSourcesTable WHERE feedUrl = ? AND lastSynced IS NOT NULL`,
@@ -37,43 +54,40 @@ async function addFeedSource(
             )
         } catch (error) {
             log.error('Error checking existing endpoint')
-            return
+            return false
         }
 
         if (existingEndpoint) {
             console.log('Feed Already Saved: ', feedUrl)
-            return
+            return true
         }
 
-        const feedDataToSave = {
+        const feedDataToSave: FeedData = {
             feedUrl: feedUrl,
             feedTitle: feedTitle,
-            // feedIcon: feedIcon,
-            // feedDescription: feedDescription,
             lastSynced: null,
         }
 
         let isSubstack =
             feedUrl.includes('.substack.com/') || type === 'substack'
 
-        // check if the link is a substack link with custom domain
         if (!isSubstack) {
             const url = new URL(feedUrl)
             const feedURLsubstack = `${url.protocol}//${url.host}/feed`
-            let parser
-            let htmlContent
+            let parser: xml2js.Parser
+            let htmlContent: string
 
-            // attempt to fetch the rss feed of that link and see if it is a Substack feed
             try {
                 const response = await fetch(feedURLsubstack)
                 htmlContent = await response.text()
             } catch (error) {
                 console.log('error fetching feed', error)
-                throw new Error('error fetching feed:' + error.message)
+                throw new Error(
+                    'error fetching feed:' + (error as Error).message,
+                )
             }
-            let parsedData
+            let parsedData: any
 
-            //
             try {
                 parser = new xml2js.Parser()
                 parser.parseString(htmlContent, function (err, result) {
@@ -99,14 +113,14 @@ async function addFeedSource(
 
         if (isSubstack) {
             console.log('Substack feed detected')
-            let links = []
+            let links: string[] = []
 
             const url = new URL(feedUrl)
             // route them to the substack page that has all the links to all postss
             const feedUrlSubstack = `${url.protocol}//${url.host}/sitemap`
 
             // find all links that are to the YEAR pages in the substack sitemap
-            const allSiteMapPages = []
+            const allSiteMapPages: string[] = []
             const response = await fetch(feedUrlSubstack)
             const text = await response.text()
 
@@ -140,7 +154,7 @@ async function addFeedSource(
             }
 
             if (links && links.length === 0) {
-                return
+                return false
             }
 
             // fetch all the links content and index them
@@ -169,7 +183,10 @@ async function addFeedSource(
                         )
                         .first()
 
-                    metaDataTags = JSON.parse(jsonScript.html())
+                    const scriptHtml = jsonScript.html()
+                    if (scriptHtml) {
+                        metaDataTags = JSON.parse(scriptHtml)
+                    }
                 } catch (error) {}
 
                 // get the publication time
@@ -181,10 +198,11 @@ async function addFeedSource(
                 const title = $('title').text() || metaDataTags.headline
 
                 // create the pageItem to save
-                const pageDataToSave = {
+                const pageDataToSave: PageData = {
                     fullUrl: link,
                     pageTitle: title,
                     cleanHTML: cleanHTML,
+                    fullHTML: fullHTML,
                     contentType: 'rss-feed-item',
                     createdWhen: datePublishedUnix,
                     sourceApplication: 'RSS',
@@ -209,62 +227,72 @@ async function addFeedSource(
                 feedResult = await extractFeed(feedUrl)
             } catch (error) {
                 log.log('error extracting feed:', error, feedUrl)
-                throw new Error('error extracting feed:' + error.message)
+                throw new Error(
+                    'error extracting feed:' + (error as Error).message,
+                )
             }
 
             // Fetch and index each page's data for this feed
-            for (const entry of feedResult.entries) {
-                const response = await fetch(entry.link, {
-                    headers: {
-                        Accept: 'text/html',
-                    },
-                })
-                const fullHTML = await response.text()
-                const cleanHTML = await cleanFullHTML(fullHTML)
+            if (feedResult && feedResult.entries) {
+                for (const entry of feedResult.entries) {
+                    if (!entry?.link) {
+                        return false
+                    }
+                    const response = await fetch(entry?.link, {
+                        headers: {
+                            Accept: 'text/html',
+                        },
+                    })
+                    const fullHTML = await response.text()
+                    const cleanHTML = await cleanFullHTML(fullHTML)
 
-                const $ = cheerio.load(fullHTML)
+                    const $ = cheerio.load(fullHTML)
 
-                // TODO: This does not seem to be a reliable way of getting generic webpage metadata
-                //  What metadata are we actually interested in here?
-                let metaDataTags
-                try {
-                    const scripts = $('script')
-                    const jsonScript = scripts
-                        .filter(
-                            (i, script) =>
-                                $(script).attr('type') ===
-                                'application/ld+json',
-                        )
-                        .first()
+                    // TODO: This does not seem to be a reliable way of getting generic webpage metadata
+                    //  What metadata are we actually interested in here?
+                    let metaDataTags
+                    try {
+                        const scripts = $('script')
+                        const jsonScript = scripts
+                            .filter(
+                                (i, script) =>
+                                    $(script).attr('type') ===
+                                    'application/ld+json',
+                            )
+                            .first()
 
-                    metaDataTags = JSON.parse(jsonScript.html())
-                } catch (error) {
-                    log.warn('Could not parse JSON metadata :', entry.link)
+                        const scriptHtml = jsonScript.html()
+                        if (scriptHtml) {
+                            metaDataTags = JSON.parse(scriptHtml)
+                        }
+                    } catch (error) {
+                        log.warn('Could not parse JSON metadata :', entry.link)
+                    }
+
+                    const datePublishedUnix = entry.published
+                        ? new Date(entry.published).getTime() / 1000
+                        : 0
+
+                    const pageDataToSave: PageData = {
+                        fullHTML,
+                        cleanHTML,
+                        fullUrl: entry.link,
+                        pageTitle: entry.title,
+                        contentType: 'rss-feed-item',
+                        createdWhen: datePublishedUnix,
+                        sourceApplication: 'RSS',
+                        creatorId: '', // TODO: no easy way to get creator data for any webpage
+                        metaDataJSON: JSON.stringify(metaDataTags) || '',
+                    }
+
+                    await saveAndIndexFeedPages(
+                        sourcesDB,
+                        pageDataToSave,
+                        embedTextFunction,
+                        allTables,
+                        entityExtractionFunction,
+                    )
                 }
-
-                const datePublishedUnix = entry.published
-                    ? new Date(entry.published).getTime() / 1000
-                    : 0
-
-                const pageDataToSave = {
-                    fullHTML,
-                    cleanHTML,
-                    fullUrl: entry.link,
-                    pageTitle: entry.title,
-                    contentType: 'rss-feed-item',
-                    createdWhen: datePublishedUnix,
-                    sourceApplication: 'RSS',
-                    creatorId: undefined, // TODO: no easy way to get creator data for any webpage
-                    metaDataJSON: JSON.stringify(metaDataTags) || '',
-                }
-
-                await saveAndIndexFeedPages(
-                    sourcesDB,
-                    pageDataToSave,
-                    embedTextFunction,
-                    allTables,
-                    entityExtractionFunction,
-                )
             }
         }
 
@@ -286,6 +314,7 @@ async function addFeedSource(
         console.log('error indexing rss feed', error)
         return false
     }
+    return true
 }
 
 // TODOS
@@ -295,11 +324,11 @@ async function addFeedSource(
 // index the RSS feed source and set the last indexed date to now
 
 async function saveAndIndexFeedPages(
-    sourcesDB,
-    pageDataToSave,
-    embedTextFunction,
-    allTables,
-    entityExtractionFunction,
+    sourcesDB: any,
+    pageDataToSave: PageData,
+    embedTextFunction: any,
+    allTables: any,
+    entityExtractionFunction: any,
 ) {
     try {
         await sourcesDB.run(
@@ -316,26 +345,24 @@ async function saveAndIndexFeedPages(
             ],
         )
     } catch (error) {
-        console.log(('Page Already Saved: ', error))
+        console.log('Page Already Saved: ', error)
         return
     }
 
     try {
-        await indexDocument(
-            pageDataToSave.fullUrl,
-            pageDataToSave.pageTitle,
-            pageDataToSave.cleanHTML,
-            '',
-            'rss-feed-item',
-            'RSS',
-            '',
-            embedTextFunction,
-            allTables,
-            entityExtractionFunction,
-        )
+        await indexDocument({
+            fullUrl: pageDataToSave.fullUrl,
+            pageTitle: pageDataToSave.pageTitle,
+            fullHTML: pageDataToSave.cleanHTML,
+            contentType: 'rss-feed-item',
+            sourceApplication: 'RSS',
+            embedTextFunction: embedTextFunction,
+            allTables: allTables,
+            entityExtractionFunction: entityExtractionFunction,
+        })
     } catch (error) {
         console.log('Error indexing:', error)
     }
 }
 
-module.exports = { addFeedSource, getAllRSSSources }
+export { addFeedSource, getAllRSSSources }

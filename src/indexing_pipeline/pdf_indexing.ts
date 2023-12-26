@@ -1,8 +1,35 @@
-const fs = require('fs')
-const moment = require('moment')
-const { indexDocument } = require('./index.js')
+import fs from 'fs'
+import moment from 'moment'
+import { indexDocument } from './index.js'
 
-async function processPDF(file, allTables, pdfJS, embedTextFunction) {
+interface AllTables {
+    sourcesDB: any
+}
+
+interface TextSegment {
+    transform: number[]
+    str: string
+    hasEOL: boolean
+    height: number
+}
+
+interface DocumentToSave {
+    path: string
+    fullurl: string
+    pagetitle: string
+    sourceapplication: string
+    createdwhen: number
+    creatorid: string
+    contenttype: string
+    contenttext: string
+}
+
+async function processPDF(
+    file: string,
+    allTables: AllTables,
+    pdfJS: any,
+    embedTextFunction: (text: string) => Promise<any>,
+): Promise<DocumentToSave | void> {
     const sourcesDB = allTables.sourcesDB
     const existingPDF = await sourcesDB.get(
         `SELECT * FROM pdfTable WHERE path = ?`,
@@ -54,8 +81,9 @@ async function processPDF(file, allTables, pdfJS, embedTextFunction) {
         let title = metaData.info.Title || null
 
         // Get all text elements > is a JSON Array
-        let textSections = []
-        async function getText() {
+        let textSections: TextSegment[] = []
+
+        const getText = async () => {
             var pdf = pdfDoc
             var maxPages = pdf._pdfInfo.numPages
             // get all pages text
@@ -65,7 +93,7 @@ async function processPDF(file, allTables, pdfJS, embedTextFunction) {
 
                 // remove all vertical text
                 textContent.items = textContent.items.filter(
-                    (item) => item.transform[2] >= 0,
+                    (item: TextSegment) => item.transform[2] >= 0,
                 )
 
                 textSections = [...textSections, ...textContent.items]
@@ -77,9 +105,9 @@ async function processPDF(file, allTables, pdfJS, embedTextFunction) {
         let pdfText = []
 
         // sort text elements by font size to chunk later
-        let heightCounts = {}
-        textSections.forEach((textSegment) => {
-            let height = textSegment.transform[0]
+        let heightCounts: { [key: number]: number } = {}
+        textSections.forEach((textSegment: TextSegment) => {
+            let height: number = textSegment.transform[0]
             if (heightCounts[height]) {
                 heightCounts[height]++
             } else {
@@ -87,16 +115,16 @@ async function processPDF(file, allTables, pdfJS, embedTextFunction) {
             }
         })
 
-        let sortedHeights = Object.keys(heightCounts).sort(
-            (a, b) => heightCounts[b] - heightCounts[a],
-        )
+        let sortedHeights: number[] = Object.keys(heightCounts)
+            .map(Number)
+            .sort((a, b) => heightCounts[b] - heightCounts[a])
 
-        let paragraphHeight = sortedHeights[0]
-        let headingHeights = sortedHeights.slice(1)
+        let paragraphHeight: number = sortedHeights[0]
+        let headingHeights: number[] = sortedHeights.slice(1)
 
-        headingHeights.sort((a, b) => b - a)
+        headingHeights.sort((a, b) => Number(b) - Number(a))
 
-        let textElements = {}
+        let textElements: { [key: string]: string } = {}
         // find the most common font size, this is the standard text size
         textElements[paragraphHeight] = 'Paragraph'
 
@@ -116,11 +144,11 @@ async function processPDF(file, allTables, pdfJS, embedTextFunction) {
             const textSegment = textSections[i]
             let matchingTextElement
             if (
-                // When items stop having the same font-Size, it's likely a new section or heading
-                (textSegment?.transform[0] ===
+                textSegment?.transform[0] ===
                     textSections[i - 1]?.transform[0] ||
-                    textSegment?.transform[0] <= paragraphHeight) &&
-                textSegment.str !== ''
+                (typeof textSegment?.transform[0] === 'number' &&
+                    textSegment?.transform[0] <= paragraphHeight &&
+                    textSegment.str !== '')
             ) {
                 if (
                     textSegment.hasEOL ||
@@ -228,13 +256,13 @@ async function processPDF(file, allTables, pdfJS, embedTextFunction) {
         console.log('PDF saved to Sqlite DB', documentToSave.fullurl)
 
         await indexDocument({
-            fullUrlInput: documentToSave.fullurl,
-            pageTitleInput: documentToSave.pagetitle,
-            fullHTMLInput: documentToSave.contenttext,
-            createdWhenInput: documentToSave.createdwhen,
-            contentTypeInput: documentToSave.contenttype,
-            sourceApplicationInput: documentToSave.sourceapplication,
-            creatorIdInput: documentToSave.creatorid,
+            fullUrl: documentToSave.fullurl,
+            pageTitle: documentToSave.pagetitle,
+            fullHTML: documentToSave.contenttext,
+            createdWhen: documentToSave.createdwhen,
+            contentType: documentToSave.contenttype,
+            sourceApplication: documentToSave.sourceapplication,
+            creatorId: documentToSave.creatorid,
             embedTextFunction: embedTextFunction,
             allTables: allTables,
             entityExtractionFunction: null,
@@ -247,4 +275,4 @@ async function processPDF(file, allTables, pdfJS, embedTextFunction) {
     }
 }
 
-module.exports = { processPDF }
+export { processPDF }

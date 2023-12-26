@@ -1,38 +1,45 @@
-const log = require('electron-log')
+import { Request, Response } from 'express'
+import log from 'electron-log'
 
-const { extractEntitiesFromText } = require('../indexing_pipeline/utils.js')
+interface AllTables {
+    vectorDocsTable: any
+    sourcesDB: any
+}
+
+interface Item {
+    fullurl: string
+    contenttype: string
+    _distance: number
+    pagetitle: string
+    contenttext: string
+    createdwhen: number
+    sourceApplication: string
+    creatorid: string
+    entities: string[]
+    path?: string
+}
 
 async function findSimilar(
-    req,
-    res,
-    embedTextFunction,
-    allTables,
-    entityExtractionFunction,
-) {
+    req: Request,
+    res: Response,
+    embedTextFunction: Function,
+    allTables: AllTables,
+    entityExtractionFunction: Function,
+): Promise<Response> {
     try {
-        // var vectorQuery = await embedContent(preparedContentText);
-        // const entities = await extractEntitiesFromText(
-        //   req.body.contentText,
-        //   entityExtractionFunction
-        // );
-        // const embeddedChunk = await embedTextFunction(entities.join(" "));
         const embeddedChunk = await embedTextFunction(req.body.contentText)
         const vectors = embeddedChunk[0].data
 
         const vectorDocsTable = allTables.vectorDocsTable
 
-        // console.log("searched entities", entities);
-
-        var result = await vectorDocsTable
+        let result: Item[] = await vectorDocsTable
             .search(Array.from(vectors))
-            // .metricType("L2")
             .where(`fullurl != '${req.body.fullUrl}' AND createdwhen != 0`)
             .limit(30)
             .execute()
 
-        let filteredResult = result.filter((item) => {
+        let filteredResult: Item[] = result.filter((item: Item) => {
             if (item.contenttype === 'annotation') {
-                // don't return annotations on the current page
                 var splitUrl = item.fullurl?.split('/#')
                 if (splitUrl[0] === req.body.fullUrl) {
                     return false
@@ -41,9 +48,8 @@ async function findSimilar(
             return item._distance < 1.25 && item.fullurl !== 'null'
         })
 
-        // Group by URL and take the one with the lowest distance
         filteredResult = Object.values(
-            filteredResult.reduce((acc, item) => {
+            filteredResult.reduce((acc: Record<string, Item>, item: Item) => {
                 if (
                     !acc[item.fullurl] ||
                     acc[item.fullurl]._distance > item._distance
@@ -54,9 +60,9 @@ async function findSimilar(
             }, {}),
         )
 
-        filteredResult = await Promise.all(
-            filteredResult.map(async function (item) {
-                let path = ''
+        const endResults = await Promise.all(
+            filteredResult.map(async function (item: Item) {
+                let path
                 if (item.contenttype === 'pdf') {
                     path = await allTables.sourcesDB.get(
                         `SELECT path FROM pdfTable WHERE fingerPrint = ?`,
@@ -79,12 +85,11 @@ async function findSimilar(
             }),
         )
 
-        console.log('filteredResult', filteredResult)
-        return res.status(200).send(filteredResult)
+        return res.status(200).send(endResults)
     } catch (error) {
         log.error('Error in /find_similar', error)
         return res.status(500).json({ error: 'Internal server error' })
     }
 }
 
-module.exports = { findSimilar }
+export { findSimilar }
