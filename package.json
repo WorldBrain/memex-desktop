@@ -4,6 +4,7 @@
   "version": "0.0.24",
   "description": "Backup and sync to your favorite PKM tools",
   "main": "dist/index.js",
+  "type": "module",
   "resolutions": {
     "node-abi": "^3.47.0"
   },
