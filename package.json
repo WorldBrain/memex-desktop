@@ -4,7 +4,6 @@
   "version": "0.0.24",
   "description": "Backup and sync to your favorite PKM tools",
   "main": "dist/index.js",
-  "type": "module",
   "resolutions": {
     "node-abi": "^3.47.0"
   },
@@ -149,6 +148,7 @@
     "@extractus/feed-extractor": "^7.0.8",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
+    "@types/remove-markdown": "^0.3.4",
     "@types/wink-pos-tagger": "^2.2.6",
     "@types/xml2js": "^0.4.14",
     "@xenova/transformers": "^2.11.0",
@@ -170,9 +170,11 @@
     "moment": "^2.29.4",
     "node-fetch": "^2.6.1",
     "notarytool": "^0.0.4",
+    "open": "^10.0.1",
     "openai": "^4.20.0",
     "pdfjs-dist": "^4.0.269",
     "promised-sqlite3": "^2.1.0",
+    "remove-markdown": "^0.5.0",
     "sqlite3": "^5.1.6",
     "stopwords-iso": "^1.1.0",
     "turndown": "^7.1.2",

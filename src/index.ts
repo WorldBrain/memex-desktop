@@ -12,6 +12,7 @@ import {
 
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
+import open from 'open'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -566,8 +567,12 @@ async function initializeDatabase() {
     let createFoldersTable = `CREATE TABLE IF NOT EXISTS watchedFoldersTable(
         id INTEGER PRIMARY KEY,
         path STRING,
-        type STRING)
+        type STRING
+        metaDataJSON STRING
+        )
     `
+    let createIndexQueryForType = `CREATE INDEX IF NOT EXISTS idx_watchedFoldersTable_type ON watchedFoldersTable(type)`
+    await sourcesDB.run(createIndexQueryForType)
 
     await sourcesDB.run(createFoldersTable)
 
@@ -575,6 +580,7 @@ async function initializeDatabase() {
     let createMarkdownTable = `CREATE TABLE IF NOT EXISTS markdownDocsTable(
         id INTEGER PRIMARY KEY,
         path STRING,
+        fingerPrint STRING,
         pageTitle STRING,
         content STRING,
         sourceApplication STRING, 
@@ -587,6 +593,9 @@ async function initializeDatabase() {
     await sourcesDB.run(createMarkdownTable)
     let createIndexForMarkdownPath = `CREATE INDEX IF NOT EXISTS idx_markdownDocsTable_path ON markdownDocsTable(path)`
     await sourcesDB.run(createIndexForMarkdownPath)
+
+    let createIndexForMarkdownFingerPrint = `CREATE INDEX IF NOT EXISTS idx_markdownDocsTable_fingerPrint ON markdownDocsTable(fingerPrint)`
+    await sourcesDB.run(createIndexForMarkdownFingerPrint)
 
     console.log('Database initialized at: ', dbPath, lancedb)
     let vectorDB = await lancedb.connect(vectorDBuri)
@@ -654,6 +663,8 @@ async function initializeFileSystemWatchers() {
             } else if (fs.existsSync(logseqFolder)) {
                 folder.sourceApplication = 'logseq'
                 folder.path = logseqFolder + '/pages'
+            } else {
+                folder.sourceApplication = 'local'
             }
             return folder
         }) || []
@@ -1038,7 +1049,6 @@ expressApp.post('/open_file', async function (req, res) {
         return res.status(404).send('File not found')
     }
 
-    const open = require('open')
     open(path)
         .then(() => {
             return res.status(200).send('File opened successfully')
@@ -1050,6 +1060,9 @@ expressApp.post('/open_file', async function (req, res) {
 })
 
 expressApp.post('/fetch_all_folders', async function (req, res) {
+    if (!checkSyncKey(req.body.syncKey)) {
+        return res.status(403).send('No access to open file')
+    }
     const folders = await sourcesDB?.all(
         `SELECT * FROM watchedFoldersTable`,
         function (err: any, rows: number) {
@@ -1067,6 +1080,9 @@ expressApp.post('/fetch_all_folders', async function (req, res) {
 })
 
 expressApp.post('/watch_new_folder', async function (req, res) {
+    if (!checkSyncKey(req.body.syncKey)) {
+        return res.status(403).send('No access to open file')
+    }
     const folder = await watchNewFolder()
 
     return res.status(200).json(folder)
@@ -1075,6 +1091,9 @@ expressApp.post('/watch_new_folder', async function (req, res) {
 // this is added as a global object so we can store all the watcher processes to cancel again later if needed
 
 expressApp.post('/remove_folder_to_watch', async function (req, res) {
+    if (!checkSyncKey(req.body.syncKey)) {
+        return res.status(403).send('No access to open file')
+    }
     const body = req.body
     const id = body.id
     let originalDocument: { path: string } = (await sourcesDB?.get(
@@ -1118,11 +1137,11 @@ async function watchNewFolder() {
     }
 
     // determine folder type
-    let type: 'obsidian' | 'local' | 'logseq' = 'local'
+    let sourceApplication: 'obsidian' | 'local' | 'logseq' = 'local'
     const obsidianFolder = path.join(newFolder, '.obsidian')
     const logseqFolder = path.join(newFolder, 'logseq')
-    let sourceApplication
 
+    let topLevelFolder = newFolder.split('/').pop()
     if (fs.existsSync(obsidianFolder)) {
         sourceApplication = 'obsidian'
     } else if (fs.existsSync(logseqFolder)) {
@@ -1153,15 +1172,15 @@ async function watchNewFolder() {
     // if ew folder, add to database
 
     let result = await sourcesDB?.run(
-        `INSERT INTO watchedFoldersTable(path, type) VALUES(?, ?)`,
-        [newFolder, type],
+        `INSERT INTO watchedFoldersTable(path, type) VALUES(?, ?, ?)`,
+        [newFolder, sourceApplication, ''],
     )
     let id = result?.lastID
 
     try {
         const folder = {
             path: newFolder,
-            sourceApplication: type,
+            sourceApplication: sourceApplication,
             id: id,
         }
         startWatchers([folder], allTables)
@@ -1171,7 +1190,7 @@ async function watchNewFolder() {
 
     const newFolderObject = {
         path: newFolder,
-        type: type,
+        sourceApplication: sourceApplication,
         id: id,
     }
 
@@ -1182,12 +1201,22 @@ async function startWatchers(folders: Folder[], allTables: any) {
     if (!pdfJS) {
         pdfJS = await import('pdfjs-dist')
     }
+
+    const ignoredPathObsidian = store.get('obsidian') || null
+    const ignoredPathLogseq = store.get('logseq') || null
+
+    console.log('ignoredPathObsidian', ignoredPathObsidian)
+
     let deletionInProgress = false
     // take the given folderPath array and start watchers on each folder
     folders?.length > 0 &&
         folders?.forEach((folder) => {
             var watcher = chokidar.watch(folder.path, {
-                ignored: /(^|[\/\\])\../, // ignore dotfiles
+                ignored: [
+                    /(^|[\/\\])\../, // ignore dotfiles
+                    ignoredPathObsidian as string,
+                    ignoredPathLogseq as string,
+                ],
                 persistent: true,
             })
 
@@ -1221,16 +1250,15 @@ async function startWatchers(folders: Folder[], allTables: any) {
                     console.error(error)
                 }
 
-                console.log('Processing file added to filesystem: ', path)
-
-                processingQueue = processingQueue.then(() =>
-                    // rename is a deletion and re-addition in the events, no rename unfortunately
-                    processFiles(
-                        path,
-                        folder.sourceApplication,
-                        'addOrRename',
-                        pdfJS,
-                    ),
+                processingQueue = processingQueue.then(
+                    async () =>
+                        // rename is a deletion and re-addition in the events, no rename unfortunately
+                        await processFiles(
+                            path,
+                            folder.sourceApplication,
+                            'addOrRename',
+                            pdfJS,
+                        ),
                 )
             })
             watcher.on('unlink', async function (path: string, stats: any) {
@@ -1255,29 +1283,37 @@ async function startWatchers(folders: Folder[], allTables: any) {
 
                     deletionInProgress = false
                     console.log('deletion done: ', path)
-                    return
                 }
 
                 if (path.endsWith('.md')) {
-                    // await allTables.sourcesDB.run(
-                    //     `DELETE FROM markdownDocsTable WHERE path = ?`,
-                    //     [path],
-                    // )
+                    await allTables.sourcesDB.run(
+                        `DELETE FROM markdownDocsTable WHERE path = ?`,
+                        [path],
+                    )
                     deletionInProgress = false
-                    // console.log('deletion done: ', path)
-                    return
                 }
             })
+            let debounceTimers: { [path: string]: NodeJS.Timeout | null } = {}
+
             watcher.on('change', async function (path, stats) {
-                console.log('File', path, 'has been changed', stats)
-                processingQueue = processingQueue.then(() =>
-                    processFiles(
-                        path,
-                        folder.sourceApplication,
-                        'contentChange',
-                        pdfJS,
-                    ),
-                )
+                // Clear the previous timer if it exists
+                if (debounceTimers[path]) {
+                    clearTimeout(debounceTimers[path]!)
+                }
+
+                // Set a new timer
+                debounceTimers[path] = setTimeout(() => {
+                    processingQueue = processingQueue.then(async () => {
+                        await processFiles(
+                            path,
+                            folder.sourceApplication,
+                            'contentChange',
+                            pdfJS,
+                        )
+                        // Once the processing is done, remove the timer from the map
+                        delete debounceTimers[path]
+                    })
+                }, 300) // 30 seconds
             })
         })
     console.log('watchers setup: ', Object.keys(folderWatchers).length)
@@ -1294,14 +1330,14 @@ async function processFiles(
         await processPDF(file, allTables, pdfJS, embedTextFunction)
         return
     } else if (extension === 'md') {
-        processMarkdown(
+        await processMarkdown(
             file,
             allTables,
-            pdfJS,
             embedTextFunction,
             sourceApplication,
             changeType,
         )
+        return
     } else if (extension === 'epub') {
     } else if (extension === 'mobi') {
     }
@@ -1543,9 +1579,11 @@ expressApp.put('/backup/:collection/:timestamp', async (req, res) => {
         return res.status(400).send('Malformed collection parameter')
     }
 
+    console.log('req.body', req.body, collection)
+
     var dirpath = req.body.backupPath + `/backup/${collection}`
     try {
-        // await mkdirp(dirpath); TODO fix
+        fs.mkdirSync(dirpath, { recursive: true })
     } catch (err) {
         log.error(err)
         return res.status(500).send('Failed to create directory.')

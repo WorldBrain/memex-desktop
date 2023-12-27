@@ -13,7 +13,7 @@ interface Item {
     pagetitle: string
     contenttext: string
     createdwhen: number
-    sourceApplication: string
+    sourceapplication: string
     creatorid: string
     entities: string[]
     path?: string
@@ -32,6 +32,7 @@ async function findSimilar(
 
         const vectorDocsTable = allTables.vectorDocsTable
 
+        // get results and make sure they are not also from the source just saved
         let result: Item[] = await vectorDocsTable
             .search(Array.from(vectors))
             .where(`fullurl != '${req.body.fullUrl}' AND createdwhen != 0`)
@@ -63,12 +64,32 @@ async function findSimilar(
         const endResults = await Promise.all(
             filteredResult.map(async function (item: Item) {
                 let path
+                let topLevelFolder
+
+                if (
+                    item.sourceapplication === 'obsidian' ||
+                    item.sourceapplication === 'logseq'
+                ) {
+                    topLevelFolder = await allTables.sourcesDB.get(
+                        `SELECT path FROM watchedFoldersTable WHERE type = ?`,
+                        [item.sourceapplication],
+                    )
+                    topLevelFolder = topLevelFolder.path.split('/').pop()
+                }
                 if (item.contenttype === 'pdf') {
                     path = await allTables.sourcesDB.get(
                         `SELECT path FROM pdfTable WHERE fingerPrint = ?`,
                         [item.fullurl],
                     )
                 }
+                if (item.contenttype === 'markdown') {
+                    path = await allTables.sourcesDB.get(
+                        `SELECT path FROM markdownDocsTable WHERE fingerPrint = ?`,
+                        [item.fullurl],
+                    )
+                }
+
+                console.log('item', item.sourceapplication)
 
                 return {
                     fullUrl: item.fullurl,
@@ -76,11 +97,12 @@ async function findSimilar(
                     contentText: item.contenttext,
                     createdWhen: item.createdwhen,
                     contentType: item.contenttype,
-                    sourceApplication: item.sourceApplication,
+                    sourceApplication: item.sourceapplication,
                     creatorId: item.creatorid,
                     distance: item._distance,
                     entities: item.entities,
-                    path: path.path,
+                    path: path?.path,
+                    topLevelFolder: topLevelFolder,
                 }
             }),
         )

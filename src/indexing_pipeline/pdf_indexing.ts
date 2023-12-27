@@ -242,7 +242,7 @@ async function processPDF(
         }
 
         await allTables.sourcesDB.run(
-            `INSERT INTO pdfTable VALUES(null, ?, ?, ? ,?, ?, ?, ?)`,
+            `INSERT INTO pdfTable VALUES(null, ?, ?, ? ,?, ?, ?, ?, ?)`,
             [
                 documentToSave.path,
                 documentToSave.fullurl,
@@ -251,6 +251,7 @@ async function processPDF(
                 documentToSave.createdwhen,
                 documentToSave.sourceapplication,
                 documentToSave.creatorid,
+                '',
             ],
         )
         console.log('PDF saved to Sqlite DB', documentToSave.fullurl)

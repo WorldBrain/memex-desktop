@@ -2,6 +2,7 @@ import fs from 'fs'
 import moment from 'moment'
 import path from 'path'
 import { indexDocument } from './index.js'
+import crypto from 'crypto'
 
 interface AllTables {
     sourcesDB: any
@@ -11,15 +12,20 @@ interface AllTables {
 async function processMarkdown(
     file: string,
     allTables: AllTables,
-    pdfJS: any,
     embedTextFunction: (text: string) => Promise<any>,
     sourceApplication: string,
     changeType: 'addOrRename' | 'contentChange',
 ): Promise<void> {
     const sourcesDB = allTables.sourcesDB
 
-    // get base information of PDF
-    const markdownFileData = fs.readFileSync(file)
+    // check if the file has already been indexed, and if so skip it
+    const existingFile = await sourcesDB.get(
+        `SELECT * FROM markdownDocsTable WHERE path = ?`,
+        [file],
+    )
+    if (existingFile && changeType === 'addOrRename') {
+        return
+    }
 
     // define the title by it's filename
     const title = path.basename(file, path.extname(file))
@@ -27,29 +33,131 @@ async function processMarkdown(
     // get the markdown text
     const markdown = fs.readFileSync(file, 'utf-8')
 
+    if (markdown.length === 0) {
+        return
+    }
+
+    // hash the markdown file to get the fingerprint
+    const fingerPrint = crypto.createHash('md5').update(markdown).digest('hex')
+
     // get the file creation date
     const stats = fs.statSync(file)
-    console.log('stats', stats)
     const createdWhen = moment(stats.birthtime).valueOf()
-    // save the document to the sourcesDB markdownDocsTable
-    await allTables.sourcesDB.run(
-        `INSERT OR REPLACE INTO markdownDocsTable VALUES (NULL, ?, ?, ?, 'localMarkdown', ?, ?, ?)`,
-        [file, title, markdown, sourceApplication, createdWhen, '1', ''],
-    )
 
-    // chunk it up by using any double \n as the delimiter, except when the previous item was a headline, then include it
-    // also include the last headline in every chunk until a new headline is found
-    const chunks = markdown.split('\n\n')
-    let chunkedMarkdown: string[] = []
-    let lastHeadline = ''
+    // if title change, compare by fingerprint
 
-    chunks.forEach((chunk) => {
-        if (chunk.startsWith('#')) {
-            lastHeadline = chunk
+    if (changeType === 'addOrRename') {
+        // check if the document is already in the database
+        try {
+            const existingFileViaFingerPrint = await sourcesDB.get(
+                `SELECT * FROM markdownDocsTable WHERE fingerPrint = ?`,
+                [fingerPrint],
+            )
+
+            // this means it was just the setup listener
+            if (existingFileViaFingerPrint?.path === file) {
+                return
+            }
+            // determine if the change is just rename or if its a new file
+            if (existingFileViaFingerPrint) {
+                const existingFilePath =
+                    existingFileViaFingerPrint.path.substring(
+                        0,
+                        existingFileViaFingerPrint.path.lastIndexOf('/'),
+                    )
+                const newFilePath = file.substring(0, file.lastIndexOf('/'))
+
+                if (existingFilePath === newFilePath) {
+                    // if it is a rename, update the path
+                    await allTables.sourcesDB.run(
+                        `UPDATE markdownDocsTable SET path = ? WHERE fingerPrint = ?`,
+                        [file, fingerPrint],
+                    )
+                }
+
+                // TODO: if a rename it means we have to either update all the vectors with the new path or delete the old vectors and reindex the entire document
+                console.log('delete vectors')
+                await allTables.vectorDocsTable.delete(
+                    `fullurl = '${fingerPrint}'`,
+                )
+            } else {
+                // TODO: if a new file, index the entire document
+                await allTables?.sourcesDB?.run(
+                    `INSERT INTO markdownDocsTable VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [
+                        file,
+                        fingerPrint,
+                        title,
+                        markdown,
+                        sourceApplication,
+                        createdWhen,
+                        '1',
+                        '',
+                    ],
+                )
+            }
+        } catch (error) {
+            throw error
         }
-        chunkedMarkdown.push(lastHeadline + '\n' + chunk)
-    })
+        const chunkedMarkdown = await chunkMarkdown(markdown)
 
+        console.log('sourceApplication', sourceApplication)
+
+        await indexDocument({
+            fullUrl: fingerPrint,
+            pageTitle: title,
+            fullHTML: chunkedMarkdown,
+            createdWhen: createdWhen,
+            contentType: 'markdown',
+            sourceApplication: sourceApplication,
+            creatorId: '1',
+            embedTextFunction: embedTextFunction,
+            allTables: allTables,
+            entityExtractionFunction: null,
+        })
+    }
+
+    // if content change compare by path
+
+    if (changeType === 'contentChange') {
+        // check if the document is already in the database
+        const existingFileViaPath = await sourcesDB.get(
+            `SELECT fingerPrint FROM markdownDocsTable WHERE path = ?`,
+            [file],
+        )
+
+        // make sure the file exists before changing the content
+        if (existingFileViaPath) {
+            await allTables.sourcesDB.run(
+                `UPDATE markdownDocsTable SET content = ? , fingerPrint = ? WHERE path = ?`,
+                [markdown, fingerPrint, file],
+            )
+
+            // TODO: if the content changes we have to delete all the vectors of this document and re-index the entire document. We have to debounce this somehow beca
+            await allTables.vectorDocsTable.delete(
+                `fullurl = '${existingFileViaPath.fingerPrint}'`,
+            )
+
+            const chunkedMarkdown = await chunkMarkdown(markdown)
+
+            await indexDocument({
+                fullUrl: fingerPrint,
+                pageTitle: title,
+                fullHTML: chunkedMarkdown,
+                createdWhen: createdWhen,
+                contentType: 'markdown',
+                sourceApplication: sourceApplication,
+                creatorId: '1',
+                embedTextFunction: embedTextFunction,
+                allTables: allTables,
+                entityExtractionFunction: null,
+            })
+        }
+    }
+
+    //
+
+    //
     // if the document is already in the database, remove all vectors and reindex the entire document
 
     // if it is a content change, search for the path bc that is tracked+
@@ -108,3 +216,23 @@ async function processMarkdown(
 }
 
 export { processMarkdown }
+
+export async function chunkMarkdown(markdown: string) {
+    // chunk it up by using any double \n as the delimiter, except when the previous item was a headline, then include it
+    // also include the last headline in every chunk until a new headline is found
+    const chunks = markdown.split('\n\n')
+    let chunkedMarkdown: string[] = []
+    let lastHeadline = ''
+
+    chunks.forEach((chunk) => {
+        if (chunk.startsWith('#')) {
+            lastHeadline = chunk
+        }
+
+        // Clean the chunk by converting markdown to text
+
+        chunkedMarkdown.push(lastHeadline + '\n' + chunk)
+    })
+
+    return chunkedMarkdown
+}
