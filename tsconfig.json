@@ -7,7 +7,7 @@
         "noImplicitAny": true,
         "sourceMap": true,
         "baseUrl": ".",
-        "outDir": "dist",
+        "outDir": "build",
         "strict": true,
         "moduleResolution": "node",
         "resolveJsonModule": true,

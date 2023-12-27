@@ -1,9 +1,9 @@
 {
   "name": "memex-desktop",
   "productName": "Memex Desktop",
-  "version": "0.0.24",
+  "version": "0.0.25",
   "description": "Backup and sync to your favorite PKM tools",
-  "main": "dist/index.js",
+  "main": "build/index.js",
   "type": "module",
   "resolutions": {
     "node-abi": "^3.47.0"
@@ -23,7 +23,7 @@
     "deploy": "electron-builder build --mac --linux --win --publish never",
     "build:manual": "electron-builder build -mwl --publish never",
     "build:mac:x64": "electron-builder build --mac dmg zip --x64",
-    "build:mac:arm64:dmg": "electron-builder build --mac dmg --arm64",
+    "build:mac:arm64:dmg": "tsc && electron-builder build --mac dmg --arm64",
     "build:mac:arm64:dmg:withoutSign": "electron-builder build --mac dmg --arm64 --config.afterSign",
     "build:mac:arm64": "electron-builder build --mac dmg zip --arm64",
     "build:mac": "electron-builder build --mac dmg zip --x64 --arm64",
@@ -98,7 +98,8 @@
     ],
     "files": [
       "!dist/**/*",
-      "!data/**/*"
+      "!data/**/*",
+      "build/**/*"
     ]
   },
   "repository": {
@@ -156,6 +157,7 @@
     "apache-arrow": "^14.0.1",
     "axios": "^1.6.2",
     "cheerio": "^1.0.0-rc.12",
+    "chokidar": "^3.5.3",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "electron-builder-notarize": "^1.5.1",
@@ -171,7 +173,6 @@
     "moment": "^2.29.4",
     "node-fetch": "^2.6.1",
     "notarytool": "^0.0.4",
-    "open": "^10.0.1",
     "openai": "^4.20.0",
     "pdfjs-dist": "^4.0.269",
     "promised-sqlite3": "^2.1.0",
