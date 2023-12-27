@@ -1,7 +1,7 @@
 {
   "name": "memex-desktop",
   "productName": "Memex Desktop",
-  "version": "0.0.25",
+  "version": "0.0.27",
   "description": "Backup and sync to your favorite PKM tools",
   "main": "build/index.js",
   "type": "module",
@@ -29,7 +29,7 @@
     "build:mac": "tsc && electron-builder build --mac dmg zip --x64 --arm64",
     "build:win": "tsc && electron-builder build --win nsis --x64",
     "build:linux": "tsc && electron-builder build --linux AppImage --x64",
-    "build:all": "yarn build:mac && yarn build:win && yarn build:linux",
+    "build:all": "tsc && yarn build:mac && yarn build:win && yarn build:linux",
     "build:allbutMac": "yarn build:win:x64 && yarn build:win:ia32 && yarn build:linux:x64",
     "prepare": "husky install"
   },
