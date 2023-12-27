@@ -1,14 +1,14 @@
 {
     "compilerOptions": {
-        "target": "ES5",
         "allowJs": true,
-        "module": "commonjs",
+        "module": "es2020",
         "skipLibCheck": true,
         "esModuleInterop": true,
         "noImplicitAny": true,
         "sourceMap": true,
         "baseUrl": ".",
-        "outDir": "dist",
+        "outDir": "build",
+        "strict": true,
         "moduleResolution": "node",
         "resolveJsonModule": true,
         "paths": {

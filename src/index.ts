@@ -1,35 +1,70 @@
-const express = require('express')
-const electron = require('electron')
-const {
+//
+import { indexDocument } from './indexing_pipeline/index.js'
+import { findSimilar } from './search/find_similar.js'
+import {
+    addFeedSource,
+    getAllRSSSources,
+} from './indexing_pipeline/rssFeeds/index.js'
+
+////////////////////////////////
+/// GENERAL SETUP ///
+////////////////////////////////
+
+import { fileURLToPath } from 'url'
+import { dirname } from 'path'
+import { shell } from 'electron'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+
+import express from 'express'
+import electron, {
     app,
     BrowserWindow,
-    ipcMain,
     Tray,
     Menu,
     nativeImage,
     dialog,
     Notification,
-} = electron
-const url = require('url')
+} from 'electron'
+import url from 'url'
+import xml2js from 'xml2js'
+import pkg from 'electron-updater'
+const { autoUpdater } = pkg
+
+import { AsyncDatabase } from 'promised-sqlite3'
+import axios from 'axios'
+import Store from 'electron-store'
+import fs from 'fs'
+import path from 'path'
+import log from 'electron-log'
+import * as lancedb from 'vectordb'
+import dotEnv from 'dotenv'
+import cors from 'cors'
+import chokidar from 'chokidar'
+import { Server } from 'http'
+dotEnv.config()
 
 const isPackaged = app.isPackaged
-const xml2js = require('xml2js')
-const autoUpdater = require('electron-updater').autoUpdater
-const Store = require('electron-store')
-const crypto2 = require('crypto')
-const { AsyncDatabase } = require('promised-sqlite3')
+let tray: Tray | null = null
+let mainWindow: BrowserWindow
+let downloadProgress: number = 0
 
-const axios = require('axios')
-const fs = require('fs')
-const path = require('path')
-const log = require('electron-log')
-const lancedb = require('vectordb')
-const dotEnv = require('dotenv')
-dotEnv.config()
-const settings = require('electron-settings')
-const cors = require('cors')
+let EXPRESS_PORT: number
+if (isPackaged) {
+    EXPRESS_PORT = 11922 // Different from common React port 3000 to avoid conflicts
+} else {
+    EXPRESS_PORT = 11923 // Different from common React port 3000 to avoid conflicts
+}
+let expressApp: express.Express = express()
+expressApp.use(cors({ origin: '*' }))
 
-// setting up settings and config files in the right folders
+////////////////////////////////
+/// DATATBASE SETUP STUFF ///
+////////////////////////////////
+
+import settings from 'electron-settings'
+
 if (!isPackaged) {
     settings.configure({
         dir: path.join(electron.app.getAppPath(), '..', 'MemexDesktopData'),
@@ -40,48 +75,59 @@ const store = isPackaged
     : new Store({
           cwd: path.join(electron.app.getAppPath(), '..', 'MemexDesktopData'),
       })
-
-console.log('store', store.path)
-// Electron App basic setup
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY // Must be 256 bits (32 characters)
-const IV_LENGTH = 16 // For AES, this is always 16
-let tray = null
-const EXPRESS_PORT = 11922 // Different from common React port 3000 to avoid conflicts
-let expressApp = express()
-expressApp.use(cors({ origin: '*' }))
-
-const { indexDocument } = require('./indexing_pipeline/index.js')
-const { findSimilar } = require('./search/find_similar.js')
-const {
-    addFeedSource,
-    getAllRSSSources,
-} = require('./indexing_pipeline/rssFeeds/index.js')
-// VectorTable settings
-let vectorDBuri = isPackaged
+let sourcesDB: AsyncDatabase | null = null
+let vectorDBuri: string = app.isPackaged
     ? path.join(app.getPath('userData'), 'data/vectorDB')
     : path.join('../MemexDesktopData/vectorDB')
-let sourcesDB = null
-let vectorDocsTable = null
-let vectorDocsTableName = 'vectordocstable'
-let allTables = {
+
+let vectorDocsTable: any = null
+let vectorDocsTableName: string = 'vectordocstable'
+let allTables: any = {
     sourcesDB: sourcesDB,
     vectorDocsTable: vectorDocsTable,
 }
-let mainWindow
-let downloadProgress = 0
+
+////////////////////////////////
+/// FOLDERWATCHING SETUP///
+////////////////////////////////
+
+import { processPDF } from './indexing_pipeline/pdf_indexing.js'
+import { processMarkdown } from './indexing_pipeline/markdown_indexing.js'
+let pdfJS: any = null
+let processingQueue: Promise<any> = Promise.resolve()
+let folderWatchers: any = {}
+
+interface FolderPath {
+    path: string
+    type: 'obsidian' | 'local' | 'logseq'
+}
+
+interface Source {
+    feedUrl: string
+    feedTitle: string
+    feedFavIcon: string
+    type: string
+    // add other properties as needed
+}
+
+interface Folder {
+    path: string
+    sourceApplication: 'obsidian' | 'local' | 'logseq'
+}
 
 ////////////////////////////////
 /// TRANSFORMER JS STUFF ///
 ////////////////////////////////
+
 // Setup
-let modelPipeline
-let modelEnvironment
+let modelPipeline: any
+let modelEnvironment: any
 
 // embedding functions
-let embedTextFunction
-let generateEmbeddings
-let extractEntities
-let entityExtractionFunction
+let embedTextFunction: any
+let generateEmbeddings: any
+let extractEntities: any
+let entityExtractionFunction: any
 
 ////////////////////////////////
 /// ELECTRON APP BASIC SETUP ///
@@ -99,14 +145,9 @@ if (!settings.has('userPref.startOnStartup')) {
     })
 }
 
-// trigger random change
-
-var MAIN_WINDOW_WEBPACK_ENTRY = null
-var MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY = null
-
-if (require('electron-squirrel-startup')) {
-    app.quit()
-}
+// if (require('electron-squirrel-startup')) {
+//     app.quit()
+// }
 
 expressApp.use(express.json({ limit: '50mb' })) // adjust the limit as required
 expressApp.use(express.urlencoded({ extended: true, limit: '50mb' })) // adjust the limit as required
@@ -130,7 +171,7 @@ expressApp.get('/echo', (req, res) => {
 })
 
 // Example route 3other functionality you want to add
-var server = null
+let server: Server | null = null
 
 function startExpress() {
     if (!server || !server.listening) {
@@ -156,40 +197,7 @@ function startExpress() {
     }
 }
 
-function encrypt(text) {
-    var iv = crypto2.randomBytes(IV_LENGTH)
-    var cipher = crypto2.createCipheriv(
-        'aes-256-cbc',
-        Buffer.from(ENCRYPTION_KEY),
-        iv,
-    )
-    var encrypted = cipher.update(text)
-
-    encrypted = Buffer.concat([encrypted, cipher.final()])
-
-    var key = iv.toString('hex') + ':' + encrypted.toString('hex')
-
-    return key
-}
-
-function decrypt(text) {
-    var textParts = text.split(':')
-    var iv = Buffer.from(textParts.shift(), 'hex')
-    var encryptedText = Buffer.from(textParts.join(':'), 'hex')
-    var decipher = crypto2.createDecipheriv(
-        'aes-256-cbc',
-        Buffer.from(ENCRYPTION_KEY),
-        iv,
-    )
-
-    let decrypted = decipher.update(encryptedText)
-
-    decrypted = Buffer.concat([decrypted, decipher.final()])
-
-    return decrypted.toString()
-}
-
-function checkSyncKey(inputKey) {
+function checkSyncKey(inputKey: string) {
     var storedKey = store.get('syncKey')
 
     if (!storedKey) {
@@ -203,7 +211,7 @@ function checkSyncKey(inputKey) {
 }
 
 function stopExpress() {
-    return new Promise((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
         if (server) {
             server.close((err) => {
                 if (err) {
@@ -222,7 +230,11 @@ function stopExpress() {
     })
 }
 
-function pickDirectory(type) {
+interface CustomError extends Error {
+    code?: string
+}
+
+function pickDirectory(type: string) {
     console.log('pickDirectory', type)
     try {
         var directories = dialog.showOpenDialogSync({
@@ -236,7 +248,8 @@ function pickDirectory(type) {
             return path // Return the first selected directory
         }
     } catch (error) {
-        if (error.code === 'EACCES') {
+        const err = error as CustomError
+        if (err.code === 'EACCES') {
             dialog.showErrorBox(
                 'Permission Denied',
                 'You do not have permission to access this directory. Please select a different directory or change your permission settings.',
@@ -253,7 +266,7 @@ function pickDirectory(type) {
 }
 
 async function createWindow() {
-    return new Promise((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
         mainWindow = new BrowserWindow({
             height: 600,
             width: 800,
@@ -301,12 +314,12 @@ async function createWindow() {
 }
 
 app.on('before-quit', async function () {
-    log.info('before-quit')
-    tray.destroy()
+    tray?.destroy()
     if (server) {
         log.info('Stopping Express server as parto of quit process')
         await stopExpress()
     }
+    log.info('before-quit')
 })
 
 app.on('ready', async () => {
@@ -340,6 +353,10 @@ app.on('ready', async () => {
         await initializeDatabase()
         embedTextFunction = await initializeModels()
     }
+    if (!allTables.sourcesDB || !allTables.vectorDocsTable) {
+        return
+    }
+    // await initializeFileSystemWatchers()
     try {
         startExpress() // Start Express server first
 
@@ -355,7 +372,7 @@ app.on('ready', async () => {
                 electron.app.getAppPath(),
                 'src',
                 'img',
-                'tray_icon.png',
+                'tray_icon_dev.png',
             )
         }
         var trayIcon = nativeImage.createFromPath(trayIconPath)
@@ -393,6 +410,12 @@ app.on('ready', async () => {
                 label: 'Refresh Sync Key',
                 click: function () {
                     store.delete('syncKey')
+                },
+            },
+            {
+                label: 'Add Local folder',
+                click: async function () {
+                    await watchNewFolder()
                 },
             },
             updateMenuItem,
@@ -434,36 +457,9 @@ app.on('ready', async () => {
         log.error('error', error)
         app.quit()
     }
-
-    //general setup of model pipeline needs to be on highest level to be consistent in chunking size for vectors
-    ///
-
-    // // prepare NER extraction model, needs to be on highest level to be consistent in chunking size for vectors
-    // // modelEnvironment.allowRemoteModels = false;
-    // modelEnvironment.localModelPath =
-    //   "./models/bert-base-multilingual-cased-ner-hrl_quantized.onnx";
-
-    // extractEntities = await modelPipeline(
-    //   "token-classification",
-    //   "Xenova/bert-base-multilingual-cased-ner-hrl"
-    // );
-
-    // entityExtractionFunction = await extractEntitiesFromText;
-
-    // console.log(
-    //   await entityExtractionFunction(
-    //     "To wean their country off imported oil and gas, and in the hope of retiring dirty coal-fired power stations, China’s leaders have poured money into wind and solar energy. But they are also turning to one of the most sustainable forms of non-renewable power. Over the past decade China has added 37 nuclear reactors, for a total of 55, according to the International Atomic Energy Agency, a UN body. During that same period America, which leads the world with 93 reactors, added two."
-    //   )
-    // );
-
-    // entityExtractionFunction(
-    //   "In 1945, to wean their country off imported oil and gas, and in the hope of retiring dirty coal-fired power stations, China’s leaders and in particular Xi Xinping and John malcovich have poured money into wind and solar energy and using chemical substances like H20 and co2. But they are also turning to one of the most sustainable forms of non-renewable power. Over the past decade China has added 37 nuclear reactors, for a total of 55, according to the International Atomic Energy Agency, a UN body. During that same period America, which leads the world with 93 reactors, added two."
-    // );
-
-    // setting up all databases and tables
 })
 
-async function generateEmbeddingFromText(text2embed) {
+async function generateEmbeddingFromText(text2embed: string) {
     return await generateEmbeddings(text2embed, {
         pooling: 'mean',
         normalize: true,
@@ -506,55 +502,123 @@ async function initializeDatabase() {
         }
         dbPath = '../MemexDesktopData/sourcesDB.db'
     }
-    console.log('dbPath', dbPath)
     sourcesDB = await AsyncDatabase.open(dbPath)
-    console.log('Database initialized at: ', dbPath)
 
     // create Tables
-    createRSSsourcesTable = `CREATE TABLE IF NOT EXISTS rssSourcesTable(feedUrl STRING PRIMARY KEY, feedTitle STRING, type STRING, lastSynced INTEGER)`
-    createWebPagesTable = `CREATE TABLE IF NOT EXISTS webPagesTable(fullUrl STRING PRIMARY KEY, pageTitle STRING, fullHTML STRING, contentType STRING, createdWhen INTEGER, sourceApplication STRING, creatorId STRING, metaDataJSON STRING)`
+    let createRSSsourcesTable = `CREATE TABLE IF NOT EXISTS rssSourcesTable(
+        feedUrl STRING PRIMARY KEY, 
+        feedTitle STRING, 
+        type STRING, 
+        lastSynced INTEGER)
+        `
+    await sourcesDB.run(createRSSsourcesTable)
 
-    createAnnotationsTable = `CREATE TABLE IF NOT EXISTS annotationsTable(fullUrl STRING PRIMARY KEY, pageTitle STRING, fullHTML STRING, contentType STRING, createdWhen INTEGER, sourceApplication STRING, creatorId STRING)`
+    // create the websites table
 
-    sourcesDB.run(createRSSsourcesTable, function (err) {
-        if (err) {
-            console.log('err', err)
-        }
-    })
-    sourcesDB.run(createWebPagesTable, function (err) {
-        if (err) {
-            console.log('err', err)
-        }
-    })
-    sourcesDB.run(createAnnotationsTable, function (err) {
-        if (err) {
-            console.log('err', err)
-        }
-    })
+    let createWebPagesTable = `CREATE TABLE IF NOT EXISTS webPagesTable(
+        fullUrl STRING PRIMARY KEY, 
+        pageTitle STRING, 
+        fullHTML STRING, 
+        contentType STRING, 
+        createdWhen INTEGER, 
+        sourceApplication STRING, 
+        creatorId STRING, 
+        metaDataJSON STRING)
+    `
+    await sourcesDB.run(createWebPagesTable)
 
+    // create the annotations table
+
+    let createAnnotationsTable = `CREATE TABLE IF NOT EXISTS annotationsTable(
+        fullUrl STRING PRIMARY KEY, 
+        pageTitle STRING, 
+        fullHTML STRING, 
+        contentType STRING, 
+        createdWhen INTEGER, 
+        sourceApplication STRING, 
+        creatorId STRING)
+        `
+    await sourcesDB.run(createAnnotationsTable)
+
+    // create the pdf document table
+
+    // let createPDFTable = `CREATE TABLE IF NOT EXISTS pdfTable(
+    //         id INTEGER PRIMARY KEY,
+    //         path STRING,
+    //         fingerPrint STRING,
+    //         pageTitle STRING,
+    //         extractedContent STRING,
+    //         createdWhen INTEGER,
+    //         sourceApplication STRING,
+    //         creatorId STRING,
+    //         metaDataJSON STRING
+    //         )
+    //         `
+    // await sourcesDB.run(createPDFTable)
+    // let createIndexQuery = `CREATE INDEX IF NOT EXISTS idx_pdfTable_fingerPrint ON pdfTable(fingerPrint)`
+    // await sourcesDB.run(createIndexQuery)
+
+    // let createIndexQueryForPath = `CREATE INDEX IF NOT EXISTS idx_pdfTable_path ON pdfTable(path)`
+    // await sourcesDB.run(createIndexQueryForPath)
+
+    // // Create the folders to watch table
+
+    // let createFoldersTable = `CREATE TABLE IF NOT EXISTS watchedFoldersTable(
+    //     id INTEGER PRIMARY KEY,
+    //     path STRING,
+    //     type STRING
+    //     metaDataJSON STRING
+    //     )
+    // `
+    // let createIndexQueryForType = `CREATE INDEX IF NOT EXISTS idx_watchedFoldersTable_type ON watchedFoldersTable(type)`
+    // await sourcesDB.run(createIndexQueryForType)
+
+    // await sourcesDB.run(createFoldersTable)
+
+    // // create the markdown table
+    // let createMarkdownTable = `CREATE TABLE IF NOT EXISTS markdownDocsTable(
+    //     id INTEGER PRIMARY KEY,
+    //     path STRING,
+    //     fingerPrint STRING,
+    //     pageTitle STRING,
+    //     content STRING,
+    //     sourceApplication STRING,
+    //     createdWhen INTEGER,
+    //     creatorId STRING,
+    //     metaDataJSON STRING
+    //     )
+    // `
+
+    // await sourcesDB.run(createMarkdownTable)
+    // let createIndexForMarkdownPath = `CREATE INDEX IF NOT EXISTS idx_markdownDocsTable_path ON markdownDocsTable(path)`
+    // await sourcesDB.run(createIndexForMarkdownPath)
+
+    // let createIndexForMarkdownFingerPrint = `CREATE INDEX IF NOT EXISTS idx_markdownDocsTable_fingerPrint ON markdownDocsTable(fingerPrint)`
+    // await sourcesDB.run(createIndexForMarkdownFingerPrint)
+
+    console.log('SourcesDB initialized at: ', dbPath)
     let vectorDB = await lancedb.connect(vectorDBuri)
+
+    const generateZeroVector = (size: number) => {
+        return new Array(size).fill(0)
+    }
+    let defaultVectorDocument = {
+        fullurl: 'null',
+        pagetitle: 'null',
+        sourceapplication: 'null',
+        createdwhen: 0,
+        creatorid: 'null',
+        contenttype: 'null',
+        contenttext: 'null',
+        entities: 'null',
+        vector: generateZeroVector(768),
+    }
 
     try {
         try {
             vectorDocsTable = await vectorDB.openTable(vectorDocsTableName)
         } catch {
             if (vectorDocsTable == null) {
-                function generateZeroVector(size) {
-                    return new Array(size).fill(0)
-                }
-
-                let defaultVectorDocument = {
-                    fullurl: 'null',
-                    pagetitle: 'null',
-                    sourceapplication: 'null',
-                    createdwhen: 0,
-                    creatorid: 'null',
-                    contenttype: 'null',
-                    contenttext: 'null',
-                    entities: 'null',
-                    vector: generateZeroVector(768),
-                }
-
                 vectorDocsTable = await vectorDB.createTable(
                     vectorDocsTableName,
                     [defaultVectorDocument],
@@ -569,24 +633,48 @@ async function initializeDatabase() {
         console.log('error', error)
     }
 
-    console.log('Vector Database connected at: ', vectorDBuri)
-    // sourcesDB.run(
-    //   `CREATE INDEX IF NOT EXISTS entitiesIndex ON webPagesTable(entities)`,
-    //   function(err) {
-    //     if (err) {
-    //       console.log("err", err);
-    //     }
-    //   }
-    // );
     allTables = {
         sourcesDB: sourcesDB,
         vectorDocsTable: vectorDocsTable,
+    }
+    console.log('VectorDB initialized at: ', vectorDBuri)
+    return
+}
+
+async function initializeFileSystemWatchers() {
+    // starting folder watchers:
+    let folderFetch: Folder[] | undefined = await sourcesDB?.all(
+        `SELECT * FROM watchedFoldersTable`,
+        function (err: any, rows: number) {
+            if (err) {
+                return console.log(err.message)
+            }
+            // rows contains all entries in the table
+            console.log(rows)
+        },
+    )
+
+    let folders: Folder[] =
+        folderFetch?.map((folder: Folder) => {
+            const obsidianFolder = path.join(folder.path, '.obsidian')
+            const logseqFolder = path.join(folder.path, 'logseq')
+            if (fs.existsSync(obsidianFolder)) {
+                folder.sourceApplication = 'obsidian'
+            } else if (fs.existsSync(logseqFolder)) {
+                folder.sourceApplication = 'logseq'
+                folder.path = logseqFolder + '/pages'
+            } else {
+                folder.sourceApplication = 'local'
+            }
+            return folder
+        }) || []
+    if (folderFetch) {
+        startWatchers(folders, allTables)
     }
 }
 
 async function initializeModels() {
     let { pipeline, env } = await import('@xenova/transformers')
-
     modelPipeline = pipeline
     modelEnvironment = env
     modelEnvironment.allowLocalModels = true
@@ -625,9 +713,9 @@ async function initializeModels() {
         console.log('Starting download')
         response.data.pipe(writer)
 
-        new Promise((resolve, reject) => {
+        new Promise<void>((resolve, reject) => {
             let bytesDownloaded = 0
-            response.data.on('data', (chunk) => {
+            response.data.on('data', (chunk: string) => {
                 bytesDownloaded += chunk.length
                 downloadProgress = Math.floor(
                     (bytesDownloaded / totalLength) * 100,
@@ -658,23 +746,40 @@ async function initializeModels() {
 
     embedTextFunction = generateEmbeddingFromText
 
-    console.log('embedTextFunction', embedTextFunction)
+    //general setup of model pipeline needs to be on highest level to be consistent in chunking size for vectors
+    ///
+
+    // // prepare NER extraction model, needs to be on highest level to be consistent in chunking size for vectors
+    // // modelEnvironment.allowRemoteModels = false;
+    // modelEnvironment.localModelPath =
+    //   "./models/bert-base-multilingual-cased-ner-hrl_quantized.onnx";
+
+    // extractEntities = await modelPipeline(
+    //   "token-classification",
+    //   "Xenova/bert-base-multilingual-cased-ner-hrl"
+    // );
+
+    // entityExtractionFunction = await extractEntitiesFromText;
+
+    // console.log(
+    //   await entityExtractionFunction(
+    //     "To wean their country off imported oil and gas, and in the hope of retiring dirty coal-fired power stations, China’s leaders have poured money into wind and solar energy. But they are also turning to one of the most sustainable forms of non-renewable power. Over the past decade China has added 37 nuclear reactors, for a total of 55, according to the International Atomic Energy Agency, a UN body. During that same period America, which leads the world with 93 reactors, added two."
+    //   )
+    // );
+
+    // entityExtractionFunction(
+    //   "In 1945, to wean their country off imported oil and gas, and in the hope of retiring dirty coal-fired power stations, China’s leaders and in particular Xi Xinping and John malcovich have poured money into wind and solar energy and using chemical substances like H20 and co2. But they are also turning to one of the most sustainable forms of non-renewable power. Over the past decade China has added 37 nuclear reactors, for a total of 55, according to the International Atomic Energy Agency, a UN body. During that same period America, which leads the world with 93 reactors, added two."
+    // );
+
+    // setting up all databases and tables
 
     return embedTextFunction
 }
-async function extractEntitiesFromText(text2analzye) {
-    return await extractEntities(text2analzye)
-}
+// async function extractEntitiesFromText(text2analzye) {
+//     return await extractEntities(text2analzye)
+// }
 
-// app.on("activate", function () {
-//   if (BrowserWindow.getAllWindows().length === 0) {
-//     createWindow();
-//   }
-// });
-
-// Helper Functions for server endpoints and file select
-
-function isPathComponentValid(component) {
+function isPathComponentValid(component: string) {
     if (
         typeof component !== 'string' ||
         !component.match(/^[a-z0-9\-]{2,20}$/)
@@ -716,7 +821,7 @@ expressApp.put('/add_page', async function (req, res) {
             ],
         )
 
-        await indexDocument(
+        await indexDocument({
             fullUrl,
             pageTitle,
             fullHTML,
@@ -727,7 +832,7 @@ expressApp.put('/add_page', async function (req, res) {
             embedTextFunction,
             allTables,
             entityExtractionFunction,
-        )
+        })
         return res.status(200).send(true)
     } catch (error) {
         log.error('Error in /index_document', error)
@@ -748,7 +853,7 @@ expressApp.put('/add_annotation', async function (req, res) {
     var sourceApplication = req.body?.sourceApplication || ''
 
     try {
-        await sourcesDB.run(
+        await sourcesDB?.run(
             `INSERT INTO annotationsTable VALUES(?, ?, ?, ?, ?, ?, ?)`,
             [
                 fullUrl,
@@ -761,7 +866,7 @@ expressApp.put('/add_annotation', async function (req, res) {
             ],
         )
 
-        await indexDocument(
+        await indexDocument({
             fullUrl,
             pageTitle,
             fullHTML,
@@ -772,7 +877,7 @@ expressApp.put('/add_annotation', async function (req, res) {
             embedTextFunction,
             allTables,
             entityExtractionFunction,
-        )
+        })
         return res.status(200).send(true)
     } catch (error) {
         log.error('Error in /index_annotation', error)
@@ -810,7 +915,7 @@ expressApp.post('/load_feed_sources', async function (req, res) {
         //   }
 
         //   console.log("rows", rows);
-        const feedSourcesOutput = sourcesList.map((source) => ({
+        const feedSourcesOutput = sourcesList.map((source: Source) => ({
             feedUrl: source.feedUrl,
             feedTitle: source.feedTitle,
             feedFavIcon: source.feedFavIcon,
@@ -825,7 +930,13 @@ expressApp.post('/load_feed_sources', async function (req, res) {
     }
 })
 
-let feedSourceQueue = []
+interface FeedSource {
+    feedUrl: string
+    feedTitle: string
+    type: string
+}
+
+let feedSourceQueue: FeedSource[] = []
 
 expressApp.post('/add_feed_source', async function (req, res) {
     log.log('called add_feed_source')
@@ -849,7 +960,7 @@ expressApp.post('/add_feed_source', async function (req, res) {
                 const response = await fetch(feedUrl)
                 const data = await response.text()
                 const parser = new xml2js.Parser()
-                let parsedData
+                let parsedData: any = null
 
                 parser.parseString(data, function (err, result) {
                     if (err) {
@@ -859,13 +970,20 @@ expressApp.post('/add_feed_source', async function (req, res) {
                     }
                 })
 
-                feedTitle = parsedData?.title[0] ?? ''
+                if (parsedData) {
+                    feedTitle = parsedData?.title[0] ?? ''
+                }
             }
 
             if (feedUrl && feedTitle) {
                 try {
                     const sql = `INSERT OR REPLACE INTO rssSourcesTable VALUES (?, ?, ?, ?)`
-                    sourcesDB.run(sql, [feedUrl, feedTitle, type || null, null])
+                    sourcesDB?.run(sql, [
+                        feedUrl,
+                        feedTitle,
+                        type || null,
+                        null,
+                    ])
                     log.log(`Added feed ${feedUrl}`)
                 } catch (error) {
                     log.error('Error saving feed')
@@ -875,7 +993,7 @@ expressApp.post('/add_feed_source', async function (req, res) {
         }
 
         for (const feedSource of feedSourceQueue) {
-            const { feedUrl, feedTitle, type = type || '' } = feedSource
+            const { feedUrl, feedTitle, type } = feedSource
 
             console.log('Start indexing', feedUrl)
 
@@ -910,13 +1028,319 @@ expressApp.get('/get_all_rss_sources', async function (req, res) {
         const rssSources = await getAllRSSSources(allTables)
         return res.status(200).send(rssSources)
     } catch (error) {
-        log.error(`Error adding ${feedUrl} in /add_rss_feed`, error)
+        log.error(`Error adding ${req.body.feedUrl} in /add_rss_feed`, error)
         return res.status(500).json({ error: error })
     }
 })
-expressApp.put('/remove_rss_feed', async function (req, res) {
+expressApp.put('/remove_feed_source', async function (req, res) {
+    if (!checkSyncKey(req.body.syncKey)) {
+        return res.status(403).send('Only one app instance allowed')
+    }
     // logic for how RSS feed is added to the database, and the cron job is set up
 })
+
+expressApp.post('/open_file', async function (req, res) {
+    if (!checkSyncKey(req.body.syncKey)) {
+        return res.status(403).send('No access to open file')
+    }
+
+    const path = req.body.path
+    if (!fs.existsSync(path)) {
+        return res.status(404).send('File not found')
+    }
+
+    try {
+        await shell.openExternal(path)
+        return res.status(200).send('File opened successfully')
+    } catch (error) {
+        return res.status(500).send('Error opening file')
+    }
+})
+
+expressApp.post('/fetch_all_folders', async function (req, res) {
+    if (!checkSyncKey(req.body.syncKey)) {
+        return res.status(403).send('No access to open file')
+    }
+    const folders = await sourcesDB?.all(
+        `SELECT * FROM watchedFoldersTable`,
+        function (err: any, rows: number) {
+            if (err) {
+                return console.log(err.message)
+            }
+            // rows contains all entries in the table
+            console.log(rows)
+        },
+    )
+
+    console.log('folders', folders)
+
+    return res.status(200).json(folders)
+})
+
+expressApp.post('/watch_new_folder', async function (req, res) {
+    if (!checkSyncKey(req.body.syncKey)) {
+        return res.status(403).send('No access to open file')
+    }
+    const folder = await watchNewFolder()
+
+    return res.status(200).json(folder)
+})
+
+// this is added as a global object so we can store all the watcher processes to cancel again later if needed
+
+expressApp.post('/remove_folder_to_watch', async function (req, res) {
+    if (!checkSyncKey(req.body.syncKey)) {
+        return res.status(403).send('No access to open file')
+    }
+    const body = req.body
+    const id = body.id
+    let originalDocument: { path: string } = (await sourcesDB?.get(
+        'SELECT path FROM watchedFoldersTable WHERE id = ?',
+        [id],
+    )) || { path: '' }
+    let watcherToKill = folderWatchers[originalDocument?.path]
+
+    watcherToKill.close()
+
+    await sourcesDB?.run('DELETE FROM watchedFoldersTable WHERE id = ?', [id])
+
+    delete folderWatchers[originalDocument.path]
+    return res.status(200).json({ success: true })
+})
+
+async function watchNewFolder() {
+    // Shadowopen a window otherwise the folderselect will not show
+    const newWindow = new BrowserWindow({
+        height: 10,
+        width: 10,
+        transparent: true,
+        frame: false,
+    })
+    newWindow.focus()
+    newWindow.on('close', (event) => {
+        event.preventDefault()
+        newWindow.hide()
+    })
+
+    // select new folder
+    const newFolderData = await dialog.showOpenDialog(newWindow, {
+        properties: ['openDirectory'],
+    })
+
+    let newFolder = newFolderData.filePaths[0]
+    newWindow.close()
+
+    if (!newFolder) {
+        return false
+    }
+
+    // determine folder type
+    let sourceApplication: 'obsidian' | 'local' | 'logseq' = 'local'
+    const obsidianFolder = path.join(newFolder, '.obsidian')
+    const logseqFolder = path.join(newFolder, 'logseq')
+
+    let topLevelFolder = newFolder.split('/').pop()
+    if (fs.existsSync(obsidianFolder)) {
+        sourceApplication = 'obsidian'
+    } else if (fs.existsSync(logseqFolder)) {
+        sourceApplication = 'logseq'
+        newFolder = logseqFolder + '/pages'
+    }
+
+    // check if the folder is already saved
+    let folders: Folder[] | undefined = []
+    folders = await sourcesDB?.all(
+        `SELECT * FROM watchedFoldersTable`,
+        function (err: any, rows: number) {
+            if (err) {
+                return console.log(err.message)
+            }
+            // rows contains all entries in the table
+            console.log(rows)
+        },
+    )
+
+    var folderPaths: string[] = folders
+        ? folders.map((folder: Folder) => folder.path)
+        : []
+    if (folderPaths.includes(newFolder)) {
+        return
+    }
+
+    // if ew folder, add to database
+
+    let result = await sourcesDB?.run(
+        `INSERT INTO watchedFoldersTable(path, type) VALUES(?, ?, ?)`,
+        [newFolder, sourceApplication, ''],
+    )
+    let id = result?.lastID
+
+    try {
+        const folder = {
+            path: newFolder,
+            sourceApplication: sourceApplication,
+            id: id,
+        }
+        startWatchers([folder], allTables)
+    } catch (error) {
+        log.error('Error in /watch_new_folder:', error)
+    }
+
+    const newFolderObject = {
+        path: newFolder,
+        sourceApplication: sourceApplication,
+        id: id,
+    }
+
+    return newFolderObject
+}
+
+async function startWatchers(folders: Folder[], allTables: any) {
+    if (!pdfJS) {
+        pdfJS = await import('pdfjs-dist')
+    }
+
+    const ignoredPathObsidian = store.get('obsidian') || null
+    const ignoredPathLogseq = store.get('logseq') || null
+
+    console.log('ignoredPathObsidian', ignoredPathObsidian)
+
+    let deletionInProgress = false
+    // take the given folderPath array and start watchers on each folder
+    folders?.length > 0 &&
+        folders?.forEach((folder) => {
+            var watcher = chokidar.watch(folder.path, {
+                ignored: [
+                    /(^|[\/\\])\../, // ignore dotfiles
+                    ignoredPathObsidian as string,
+                    ignoredPathLogseq as string,
+                ],
+                persistent: true,
+            })
+
+            folderWatchers[folder.path] = watcher
+
+            watcher.on('add', async function (path, stats) {
+                // found no other way to wait for the deletion here so there are no race conditions for updated files
+                let retryCount = 0
+                const maxRetries = 20
+
+                const waitForDeletion = () => {
+                    return new Promise<void>((resolve, reject) => {
+                        if (!deletionInProgress) {
+                            resolve()
+                        } else if (retryCount >= maxRetries) {
+                            reject(new Error('Max retries reached'))
+                        } else {
+                            setTimeout(() => {
+                                retryCount++
+                                waitForDeletion().then(resolve).catch(reject)
+                            }, 500)
+                        }
+                    })
+                }
+
+                try {
+                    await waitForDeletion()
+                    // Continue processing after deletion is complete
+                } catch (error) {
+                    // Handle error if max retries reached
+                    console.error(error)
+                }
+
+                processingQueue = processingQueue.then(
+                    async () =>
+                        // rename is a deletion and re-addition in the events, no rename unfortunately
+                        await processFiles(
+                            path,
+                            folder.sourceApplication,
+                            'addOrRename',
+                            pdfJS,
+                        ),
+                )
+            })
+            watcher.on('unlink', async function (path: string, stats: any) {
+                console.log('Deletion of file started: ', path)
+                deletionInProgress = true
+
+                if (path.endsWith('.pdf')) {
+                    const fingerPrint: { fingerPrint: string } =
+                        (await sourcesDB?.get(
+                            `SELECT fingerPrint FROM pdfTable WHERE path = ?`,
+                            [path],
+                        )) || { fingerPrint: '' }
+
+                    await allTables.vectorDocsTable.delete(
+                        `fullurl = '${fingerPrint?.fingerPrint.toString()}'`,
+                    )
+
+                    await allTables.sourcesDB.run(
+                        `DELETE FROM pdfTable WHERE path = ?`,
+                        [path],
+                    )
+
+                    deletionInProgress = false
+                    console.log('deletion done: ', path)
+                }
+
+                if (path.endsWith('.md')) {
+                    await allTables.sourcesDB.run(
+                        `DELETE FROM markdownDocsTable WHERE path = ?`,
+                        [path],
+                    )
+                    deletionInProgress = false
+                }
+            })
+            let debounceTimers: { [path: string]: NodeJS.Timeout | null } = {}
+
+            watcher.on('change', async function (path, stats) {
+                // Clear the previous timer if it exists
+                if (debounceTimers[path]) {
+                    clearTimeout(debounceTimers[path]!)
+                }
+
+                // Set a new timer
+                debounceTimers[path] = setTimeout(() => {
+                    processingQueue = processingQueue.then(async () => {
+                        await processFiles(
+                            path,
+                            folder.sourceApplication,
+                            'contentChange',
+                            pdfJS,
+                        )
+                        // Once the processing is done, remove the timer from the map
+                        delete debounceTimers[path]
+                    })
+                }, 300) // 30 seconds
+            })
+        })
+    console.log('watchers setup: ', Object.keys(folderWatchers).length)
+}
+
+async function processFiles(
+    file: string,
+    sourceApplication: string,
+    changeType: 'addOrRename' | 'contentChange',
+    pdfJS: any,
+) {
+    const extension = file.split('.').pop()
+    if (extension === 'pdf') {
+        await processPDF(file, allTables, pdfJS, embedTextFunction)
+        return
+    } else if (extension === 'md') {
+        await processMarkdown(
+            file,
+            allTables,
+            embedTextFunction,
+            sourceApplication,
+            changeType,
+        )
+        return
+    } else if (extension === 'epub') {
+    } else if (extension === 'mobi') {
+    }
+}
+
 ///////////////////////////
 /// PKM SYNC ENDPOINTS ///
 /////////////////////////
@@ -933,7 +1357,7 @@ expressApp.post('/set-directory', async function (req, res) {
             res.status(400).json({ error: 'Invalid pkmSyncType' })
             return
         }
-        directoryPath = await pickDirectory(pkmSyncType)
+        directoryPath = pickDirectory(pkmSyncType)
         if (directoryPath) {
             store.set(pkmSyncType, directoryPath)
             res.status(200).send(directoryPath)
@@ -1106,7 +1530,7 @@ expressApp.get('/backup/:collection', (req, res) => {
         })
         res.status(200).send(filelist.toString())
     } catch (err) {
-        if (err.code === 'ENOENT') {
+        if ((err as CustomError).code === 'ENOENT') {
             res.status(404)
             res.status(404).json({ error: 'Collection not found.' })
         } else throw err
@@ -1132,7 +1556,7 @@ expressApp.get('/backup/:collection/:timestamp', (req, res) => {
     try {
         res.status(200).send(fs.readFileSync(filepath, 'utf-8'))
     } catch (err) {
-        if (err.code === 'ENOENT') {
+        if ((err as CustomError).code === 'ENOENT') {
             res.status(404)
             req.body = 'File not found.'
         } else throw err
@@ -1153,9 +1577,11 @@ expressApp.put('/backup/:collection/:timestamp', async (req, res) => {
         return res.status(400).send('Malformed collection parameter')
     }
 
+    console.log('req.body', req.body, collection)
+
     var dirpath = req.body.backupPath + `/backup/${collection}`
     try {
-        // await mkdirp(dirpath); TODO fix
+        fs.mkdirSync(dirpath, { recursive: true })
     } catch (err) {
         log.error(err)
         return res.status(500).send('Failed to create directory.')
