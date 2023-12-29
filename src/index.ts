@@ -474,7 +474,7 @@ async function generateEmbeddingFromText(text2embed: string) {
 }
 
 async function initializeDatabase() {
-    let dbPath = null
+    let dbPath = ''
 
     if (isPackaged) {
         if (!fs.existsSync(path.join(app.getPath('userData'), 'data'))) {
@@ -574,14 +574,13 @@ async function initializeDatabase() {
     let createFoldersTable = `CREATE TABLE IF NOT EXISTS watchedFoldersTable(
         id INTEGER PRIMARY KEY,
         path STRING,
-        type STRING
+        sourceApplication STRING,
         metaDataJSON STRING
         )
     `
-    let createIndexQueryForType = `CREATE INDEX IF NOT EXISTS idx_watchedFoldersTable_type ON watchedFoldersTable(type)`
-    await sourcesDB.run(createIndexQueryForType)
-
     await sourcesDB.run(createFoldersTable)
+    let createIndexQueryForType = `CREATE INDEX IF NOT EXISTS idx_watchedFoldersTable_type ON watchedFoldersTable(sourceApplication)`
+    await sourcesDB.run(createIndexQueryForType)
 
     // create the markdown table
     let createMarkdownTable = `CREATE TABLE IF NOT EXISTS markdownDocsTable(
@@ -1068,7 +1067,9 @@ expressApp.post('/open_file', async function (req, res) {
     }
 
     try {
-        await shell.openExternal(path)
+        console.log('path', path)
+        await shell.openPath(path)
+        console.log('worked')
         return res.status(200).send('File opened successfully')
     } catch (error) {
         return res.status(500).send('Error opening file')
@@ -1186,7 +1187,7 @@ async function watchNewFolder() {
     // if ew folder, add to database
 
     let result = await sourcesDB?.run(
-        `INSERT INTO watchedFoldersTable(path, type) VALUES(?, ?, ?)`,
+        `INSERT INTO watchedFoldersTable(path, sourceApplication, metaDataJSON) VALUES(?, ?, ?)`,
         [newFolder, sourceApplication, ''],
     )
     let id = result?.lastID

@@ -71,7 +71,7 @@ async function findSimilar(
                     item.sourceapplication === 'logseq'
                 ) {
                     topLevelFolder = await allTables.sourcesDB.get(
-                        `SELECT path FROM watchedFoldersTable WHERE type = ?`,
+                        `SELECT path FROM watchedFoldersTable WHERE sourceApplication = ?`,
                         [item.sourceapplication],
                     )
                     topLevelFolder = topLevelFolder.path.split('/').pop()

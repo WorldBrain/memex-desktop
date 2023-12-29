@@ -1,215 +1,95 @@
-var __awaiter =
-    (this && this.__awaiter) ||
-    function (thisArg, _arguments, P, generator) {
-        function adopt(value) {
-            return value instanceof P
-                ? value
-                : new P(function (resolve) {
-                      resolve(value)
-                  })
-        }
-        return new (P || (P = Promise))(function (resolve, reject) {
-            function fulfilled(value) {
-                try {
-                    step(generator.next(value))
-                } catch (e) {
-                    reject(e)
-                }
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __generator = (this && this.__generator) || function (thisArg, body) {
+    var _ = { label: 0, sent: function() { if (t[0] & 1) throw t[1]; return t[1]; }, trys: [], ops: [] }, f, y, t, g;
+    return g = { next: verb(0), "throw": verb(1), "return": verb(2) }, typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
+    function verb(n) { return function (v) { return step([n, v]); }; }
+    function step(op) {
+        if (f) throw new TypeError("Generator is already executing.");
+        while (g && (g = 0, op[0] && (_ = 0)), _) try {
+            if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
+            if (y = 0, t) op = [op[0] & 2, t.value];
+            switch (op[0]) {
+                case 0: case 1: t = op; break;
+                case 4: _.label++; return { value: op[1], done: false };
+                case 5: _.label++; y = op[1]; op = [0]; continue;
+                case 7: op = _.ops.pop(); _.trys.pop(); continue;
+                default:
+                    if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) { _ = 0; continue; }
+                    if (op[0] === 3 && (!t || (op[1] > t[0] && op[1] < t[3]))) { _.label = op[1]; break; }
+                    if (op[0] === 6 && _.label < t[1]) { _.label = t[1]; t = op; break; }
+                    if (t && _.label < t[2]) { _.label = t[2]; _.ops.push(op); break; }
+                    if (t[2]) _.ops.pop();
+                    _.trys.pop(); continue;
             }
-            function rejected(value) {
-                try {
-                    step(generator['throw'](value))
-                } catch (e) {
-                    reject(e)
-                }
-            }
-            function step(result) {
-                result.done
-                    ? resolve(result.value)
-                    : adopt(result.value).then(fulfilled, rejected)
-            }
-            step(
-                (generator = generator.apply(thisArg, _arguments || [])).next(),
-            )
-        })
+            op = body.call(thisArg, _);
+        } catch (e) { op = [6, e]; y = 0; } finally { f = t = 0; }
+        if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
     }
-var __generator =
-    (this && this.__generator) ||
-    function (thisArg, body) {
-        var _ = {
-                label: 0,
-                sent: function () {
-                    if (t[0] & 1) throw t[1]
-                    return t[1]
-                },
-                trys: [],
-                ops: [],
-            },
-            f,
-            y,
-            t,
-            g
-        return (
-            (g = { next: verb(0), throw: verb(1), return: verb(2) }),
-            typeof Symbol === 'function' &&
-                (g[Symbol.iterator] = function () {
-                    return this
-                }),
-            g
-        )
-        function verb(n) {
-            return function (v) {
-                return step([n, v])
-            }
-        }
-        function step(op) {
-            if (f) throw new TypeError('Generator is already executing.')
-            while ((g && ((g = 0), op[0] && (_ = 0)), _))
-                try {
-                    if (
-                        ((f = 1),
-                        y &&
-                            (t =
-                                op[0] & 2
-                                    ? y['return']
-                                    : op[0]
-                                      ? y['throw'] ||
-                                        ((t = y['return']) && t.call(y), 0)
-                                      : y.next) &&
-                            !(t = t.call(y, op[1])).done)
-                    )
-                        return t
-                    if (((y = 0), t)) op = [op[0] & 2, t.value]
-                    switch (op[0]) {
-                        case 0:
-                        case 1:
-                            t = op
-                            break
-                        case 4:
-                            _.label++
-                            return { value: op[1], done: false }
-                        case 5:
-                            _.label++
-                            y = op[1]
-                            op = [0]
-                            continue
-                        case 7:
-                            op = _.ops.pop()
-                            _.trys.pop()
-                            continue
-                        default:
-                            if (
-                                !((t = _.trys),
-                                (t = t.length > 0 && t[t.length - 1])) &&
-                                (op[0] === 6 || op[0] === 2)
-                            ) {
-                                _ = 0
-                                continue
-                            }
-                            if (
-                                op[0] === 3 &&
-                                (!t || (op[1] > t[0] && op[1] < t[3]))
-                            ) {
-                                _.label = op[1]
-                                break
-                            }
-                            if (op[0] === 6 && _.label < t[1]) {
-                                _.label = t[1]
-                                t = op
-                                break
-                            }
-                            if (t && _.label < t[2]) {
-                                _.label = t[2]
-                                _.ops.push(op)
-                                break
-                            }
-                            if (t[2]) _.ops.pop()
-                            _.trys.pop()
-                            continue
-                    }
-                    op = body.call(thisArg, _)
-                } catch (e) {
-                    op = [6, e]
-                    y = 0
-                } finally {
-                    f = t = 0
-                }
-            if (op[0] & 5) throw op[1]
-            return { value: op[0] ? op[1] : void 0, done: true }
-        }
-    }
-import { JSDOM } from 'jsdom'
-import TurndownService from 'turndown'
-import posTagger from 'wink-pos-tagger'
+};
+import { JSDOM } from 'jsdom';
+import TurndownService from 'turndown';
+import posTagger from 'wink-pos-tagger';
 export function splitContentInReasonableChunks(contentText) {
     return __awaiter(this, void 0, void 0, function () {
-        var htmlDoc, paragraphs, chunks
+        var htmlDoc, paragraphs, chunks;
         return __generator(this, function (_a) {
-            htmlDoc = new JSDOM(contentText)
-            paragraphs = htmlDoc.window.document.querySelectorAll('p')
-            chunks = []
+            htmlDoc = new JSDOM(contentText);
+            paragraphs = htmlDoc.window.document.querySelectorAll('p');
+            chunks = [];
             paragraphs.forEach(function (paragraph) {
-                var chunk = paragraph.textContent
-                var turndownService = new TurndownService()
-                chunk = turndownService.turndown(chunk || '')
+                var chunk = paragraph.textContent;
+                var turndownService = new TurndownService();
+                chunk = turndownService.turndown(chunk || '');
                 if (chunk.length > 50) {
-                    chunks.push(chunk)
+                    chunks.push(chunk);
                 }
-            })
-            return [2 /*return*/, chunks]
-        })
-    })
+            });
+            return [2 /*return*/, chunks];
+        });
+    });
 }
 export function cleanFullHTML(fullHTML) {
-    var _a, _b, _c
+    var _a, _b, _c;
     return __awaiter(this, void 0, void 0, function () {
-        var cleanFullHTML,
-            dom,
-            document,
-            scriptTags,
-            styleTags,
-            svgTags,
-            i,
-            i,
-            i
+        var cleanFullHTML, dom, document, scriptTags, styleTags, svgTags, i, i, i;
         return __generator(this, function (_d) {
-            cleanFullHTML = fullHTML
-            dom = new JSDOM(cleanFullHTML)
-            document = dom.window.document
-            scriptTags = document.getElementsByTagName('script')
-            styleTags = document.getElementsByTagName('style')
-            svgTags = document.getElementsByTagName('svg')
+            cleanFullHTML = fullHTML;
+            dom = new JSDOM(cleanFullHTML);
+            document = dom.window.document;
+            scriptTags = document.getElementsByTagName('script');
+            styleTags = document.getElementsByTagName('style');
+            svgTags = document.getElementsByTagName('svg');
             for (i = scriptTags.length - 1; i >= 0; i--) {
-                ;(_a = scriptTags[i].parentNode) === null || _a === void 0
-                    ? void 0
-                    : _a.removeChild(scriptTags[i])
+                (_a = scriptTags[i].parentNode) === null || _a === void 0 ? void 0 : _a.removeChild(scriptTags[i]);
             }
             for (i = styleTags.length - 1; i >= 0; i--) {
-                ;(_b = styleTags[i].parentNode) === null || _b === void 0
-                    ? void 0
-                    : _b.removeChild(styleTags[i])
+                (_b = styleTags[i].parentNode) === null || _b === void 0 ? void 0 : _b.removeChild(styleTags[i]);
             }
             for (i = svgTags.length - 1; i >= 0; i--) {
-                ;(_c = svgTags[i].parentNode) === null || _c === void 0
-                    ? void 0
-                    : _c.removeChild(svgTags[i])
+                (_c = svgTags[i].parentNode) === null || _c === void 0 ? void 0 : _c.removeChild(svgTags[i]);
             }
-            cleanFullHTML = dom.serialize()
-            return [2 /*return*/, cleanFullHTML]
-        })
-    })
+            cleanFullHTML = dom.serialize();
+            return [2 /*return*/, cleanFullHTML];
+        });
+    });
 }
 export function prepareContentForEmbedding(contentText) {
     return __awaiter(this, void 0, void 0, function () {
-        var response, words, stopWords
+        var response, words, stopWords;
         return __generator(this, function (_a) {
             // Remove all special characters
-            contentText = contentText.replace(/[^\w\s]/gi, ' ')
-            words = contentText.split(' ')
+            contentText = contentText.replace(/[^\w\s]/gi, ' ');
+            words = contentText.split(' ');
             // Make all words lowercase
-            words = words.map(function (word) {
-                return word.toLowerCase().trim()
-            })
+            words = words.map(function (word) { return word.toLowerCase().trim(); });
             stopWords = [
                 'a',
                 'an',
@@ -287,29 +167,19 @@ export function prepareContentForEmbedding(contentText) {
                 'were',
                 'will',
                 'with',
-            ]
-            words = words.filter(function (word) {
-                return !stopWords.some(function (stopWord) {
-                    return stopWord === word
-                })
-            })
-            response = Array.from(new Set(words)).join(' ')
-            return [2 /*return*/, response]
-        })
-    })
+            ];
+            words = words.filter(function (word) { return !stopWords.some(function (stopWord) { return stopWord === word; }); });
+            response = Array.from(new Set(words)).join(' ');
+            return [2 /*return*/, response];
+        });
+    });
 }
 export function extractEntitiesFromText(text, entityExtractionFunction) {
     return __awaiter(this, void 0, void 0, function () {
-        var tagger,
-            taggedText,
-            filteredTaggedText,
-            entities,
-            concatenatedEntity,
-            english,
-            unwantedChars
+        var tagger, taggedText, filteredTaggedText, entities, concatenatedEntity, english, unwantedChars;
         return __generator(this, function (_a) {
-            tagger = new posTagger()
-            taggedText = tagger.tagSentence(text)
+            tagger = new posTagger();
+            taggedText = tagger.tagSentence(text);
             filteredTaggedText = taggedText.filter(function (item) {
                 // List of item descriptions
                 // CC Coord Conjuncn           and,but,or
@@ -391,19 +261,17 @@ export function extractEntitiesFromText(text, entityExtractionFunction) {
                     '\\',
                     '[',
                     ']',
-                ]
-                return !unwantedPos.some(function (pos) {
-                    return pos === item.pos
-                })
-            })
-            entities = []
+                ];
+                return !unwantedPos.some(function (pos) { return pos === item.pos; });
+            });
+            entities = [];
             filteredTaggedText.forEach(function (item) {
-                entities.push(item.value)
+                entities.push(item.value);
                 item.lemma &&
                     item.value.toLowerCase() !== item.lemma &&
-                    entities.push(item.lemma)
-            })
-            concatenatedEntity = ''
+                    entities.push(item.lemma);
+            });
+            concatenatedEntity = '';
             // for (let i = 0; i < rawEntities.length; i++) {
             //   if (
             //     i < rawEntities.length - 1 &&
@@ -417,13 +285,9 @@ export function extractEntitiesFromText(text, entityExtractionFunction) {
             //   }
             // }
             // remove weird extractions that happen with unknown words that are split in the middle
-            entities = entities.map(function (entity) {
-                return entity.replace(/ ##/g, '')
-            })
-            english = stopwords.en
-            entities = entities.filter(function (entity) {
-                return !english.includes(entity.toLowerCase())
-            })
+            entities = entities.map(function (entity) { return entity.replace(/ ##/g, ''); });
+            english = stopwords.en;
+            entities = entities.filter(function (entity) { return !english.includes(entity.toLowerCase()); });
             unwantedChars = [
                 ',',
                 '.',
@@ -436,19 +300,15 @@ export function extractEntitiesFromText(text, entityExtractionFunction) {
                 '\\',
                 '[',
                 ']',
-            ]
-            entities = entities.filter(function (entity) {
-                return !unwantedChars.includes(entity)
-            })
+            ];
+            entities = entities.filter(function (entity) { return !unwantedChars.includes(entity); });
             // Remove all numbers with less than 3 characters
-            entities = entities.filter(function (entity) {
-                return !(entity.length < 3 && /^\d+$/.test(entity))
-            })
+            entities = entities.filter(function (entity) { return !(entity.length < 3 && /^\d+$/.test(entity)); });
             // Deduplicate entities
-            entities = Array.from(new Set(entities))
-            return [2 /*return*/, entities]
-        })
-    })
+            entities = Array.from(new Set(entities));
+            return [2 /*return*/, entities];
+        });
+    });
 }
 var stopwords = {
     af: [
@@ -22273,6 +22133,6 @@ var stopwords = {
         'yakhe',
         'zakhe',
         'zonke',
-    ],
-}
+    ]
+};
 //# sourceMappingURL=utils.js.map
