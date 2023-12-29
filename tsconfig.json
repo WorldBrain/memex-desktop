@@ -1,7 +1,7 @@
 {
     "compilerOptions": {
         "allowJs": true,
-        "module": "es2020",
+        "module": "ES2020",
         "skipLibCheck": true,
         "esModuleInterop": true,
         "noImplicitAny": true,
@@ -15,5 +15,6 @@
             "*": ["node_modules/*"]
         }
     },
-    "include": ["src/**/*"]
+    "include": ["src/**/*"],
+    "exclude": ["src/preload.cjs"]
 }

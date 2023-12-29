@@ -89,8 +89,6 @@ async function findSimilar(
                     )
                 }
 
-                console.log('item', item.sourceapplication)
-
                 return {
                     fullUrl: item.fullurl,
                     pageTitle: item.pagetitle,

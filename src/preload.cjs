@@ -2,18 +2,18 @@
 // See the Electron documentation for details on how to use preload scripts:
 // https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
 
-import { contextBridge, ipcRenderer } from 'electron'
+const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('electron', {
     ipcRenderer: {
-        send: (channel: string, data: any): void => {
+        send: function (channel, data) {
             ipcRenderer.send(channel, data)
         },
-        on: (
-            channel: string,
-            func: (event: any, ...args: any[]) => void,
-        ): void => {
+        on: function (channel, func) {
             ipcRenderer.on(channel, func)
+        },
+        getDbPath: async function () {
+            return await ipcRenderer.invoke('get-db-path')
         },
     },
 })

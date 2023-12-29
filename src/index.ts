@@ -25,6 +25,7 @@ import electron, {
     Menu,
     nativeImage,
     dialog,
+    ipcMain,
     Notification,
 } from 'electron'
 import url from 'url'
@@ -58,6 +59,10 @@ if (isPackaged) {
 }
 let expressApp: express.Express = express()
 expressApp.use(cors({ origin: '*' }))
+
+ipcMain.handle('get-db-path', () => {
+    return path.join(app.getPath('userData'))
+})
 
 ////////////////////////////////
 /// DATATBASE SETUP STUFF ///
@@ -271,7 +276,7 @@ async function createWindow() {
             height: 600,
             width: 800,
             webPreferences: {
-                preload: path.join(__dirname, 'preload.js'),
+                preload: path.join(__dirname, 'preload.cjs'),
                 nodeIntegration: true,
             },
         })
@@ -358,7 +363,7 @@ app.on('ready', async () => {
     if (!allTables.sourcesDB || !allTables.vectorDocsTable) {
         return
     }
-    // await initializeFileSystemWatchers()
+    await initializeFileSystemWatchers()
     try {
         startExpress() // Start Express server first
 
@@ -504,6 +509,7 @@ async function initializeDatabase() {
         }
         dbPath = '../MemexDesktopData/sourcesDB.db'
     }
+
     sourcesDB = await AsyncDatabase.open(dbPath)
 
     // create Tables
@@ -544,59 +550,59 @@ async function initializeDatabase() {
 
     // create the pdf document table
 
-    // let createPDFTable = `CREATE TABLE IF NOT EXISTS pdfTable(
-    //         id INTEGER PRIMARY KEY,
-    //         path STRING,
-    //         fingerPrint STRING,
-    //         pageTitle STRING,
-    //         extractedContent STRING,
-    //         createdWhen INTEGER,
-    //         sourceApplication STRING,
-    //         creatorId STRING,
-    //         metaDataJSON STRING
-    //         )
-    //         `
-    // await sourcesDB.run(createPDFTable)
-    // let createIndexQuery = `CREATE INDEX IF NOT EXISTS idx_pdfTable_fingerPrint ON pdfTable(fingerPrint)`
-    // await sourcesDB.run(createIndexQuery)
+    let createPDFTable = `CREATE TABLE IF NOT EXISTS pdfTable(
+            id INTEGER PRIMARY KEY,
+            path STRING,
+            fingerPrint STRING,
+            pageTitle STRING,
+            extractedContent STRING,
+            createdWhen INTEGER,
+            sourceApplication STRING,
+            creatorId STRING,
+            metaDataJSON STRING
+            )
+            `
+    await sourcesDB.run(createPDFTable)
+    let createIndexQuery = `CREATE INDEX IF NOT EXISTS idx_pdfTable_fingerPrint ON pdfTable(fingerPrint)`
+    await sourcesDB.run(createIndexQuery)
 
-    // let createIndexQueryForPath = `CREATE INDEX IF NOT EXISTS idx_pdfTable_path ON pdfTable(path)`
-    // await sourcesDB.run(createIndexQueryForPath)
+    let createIndexQueryForPath = `CREATE INDEX IF NOT EXISTS idx_pdfTable_path ON pdfTable(path)`
+    await sourcesDB.run(createIndexQueryForPath)
 
-    // // Create the folders to watch table
+    // Create the folders to watch table
 
-    // let createFoldersTable = `CREATE TABLE IF NOT EXISTS watchedFoldersTable(
-    //     id INTEGER PRIMARY KEY,
-    //     path STRING,
-    //     type STRING
-    //     metaDataJSON STRING
-    //     )
-    // `
-    // let createIndexQueryForType = `CREATE INDEX IF NOT EXISTS idx_watchedFoldersTable_type ON watchedFoldersTable(type)`
-    // await sourcesDB.run(createIndexQueryForType)
+    let createFoldersTable = `CREATE TABLE IF NOT EXISTS watchedFoldersTable(
+        id INTEGER PRIMARY KEY,
+        path STRING,
+        type STRING
+        metaDataJSON STRING
+        )
+    `
+    let createIndexQueryForType = `CREATE INDEX IF NOT EXISTS idx_watchedFoldersTable_type ON watchedFoldersTable(type)`
+    await sourcesDB.run(createIndexQueryForType)
 
-    // await sourcesDB.run(createFoldersTable)
+    await sourcesDB.run(createFoldersTable)
 
-    // // create the markdown table
-    // let createMarkdownTable = `CREATE TABLE IF NOT EXISTS markdownDocsTable(
-    //     id INTEGER PRIMARY KEY,
-    //     path STRING,
-    //     fingerPrint STRING,
-    //     pageTitle STRING,
-    //     content STRING,
-    //     sourceApplication STRING,
-    //     createdWhen INTEGER,
-    //     creatorId STRING,
-    //     metaDataJSON STRING
-    //     )
-    // `
+    // create the markdown table
+    let createMarkdownTable = `CREATE TABLE IF NOT EXISTS markdownDocsTable(
+        id INTEGER PRIMARY KEY,
+        path STRING,
+        fingerPrint STRING,
+        pageTitle STRING,
+        content STRING,
+        sourceApplication STRING,
+        createdWhen INTEGER,
+        creatorId STRING,
+        metaDataJSON STRING
+        )
+    `
 
-    // await sourcesDB.run(createMarkdownTable)
-    // let createIndexForMarkdownPath = `CREATE INDEX IF NOT EXISTS idx_markdownDocsTable_path ON markdownDocsTable(path)`
-    // await sourcesDB.run(createIndexForMarkdownPath)
+    await sourcesDB.run(createMarkdownTable)
+    let createIndexForMarkdownPath = `CREATE INDEX IF NOT EXISTS idx_markdownDocsTable_path ON markdownDocsTable(path)`
+    await sourcesDB.run(createIndexForMarkdownPath)
 
-    // let createIndexForMarkdownFingerPrint = `CREATE INDEX IF NOT EXISTS idx_markdownDocsTable_fingerPrint ON markdownDocsTable(fingerPrint)`
-    // await sourcesDB.run(createIndexForMarkdownFingerPrint)
+    let createIndexForMarkdownFingerPrint = `CREATE INDEX IF NOT EXISTS idx_markdownDocsTable_fingerPrint ON markdownDocsTable(fingerPrint)`
+    await sourcesDB.run(createIndexForMarkdownFingerPrint)
 
     console.log('SourcesDB initialized at: ', dbPath)
     let vectorDB = await lancedb.connect(vectorDBuri)
@@ -924,7 +930,6 @@ expressApp.post('/load_feed_sources', async function (req, res) {
             type: source.type,
         }))
 
-        console.log('feedSources', feedSourcesOutput)
         return res.status(200).send(feedSourcesOutput)
     } catch (error) {
         console.log(`Error loading feed sources in /load_feed_sources`, error)
@@ -947,10 +952,8 @@ expressApp.post('/add_feed_source', async function (req, res) {
         return res.status(403).send('Only one app instance allowed')
     }
     const feedSources = req.body.feedSources
-    console.log('feedSources', req.body)
     feedSourceQueue = [...feedSourceQueue, ...feedSources]
 
-    console.log('feedSourceQueue', feedSourceQueue)
     // logic for how RSS feed is added to the database
     try {
         for (let i = 0; i < feedSources.length; i++) {
@@ -996,8 +999,6 @@ expressApp.post('/add_feed_source', async function (req, res) {
 
         for (const feedSource of feedSourceQueue) {
             const { feedUrl, feedTitle, type } = feedSource
-
-            console.log('Start indexing', feedUrl)
 
             await addFeedSource(
                 feedUrl,
@@ -1088,8 +1089,6 @@ expressApp.post('/fetch_all_folders', async function (req, res) {
             console.log(rows)
         },
     )
-
-    console.log('folders', folders)
 
     return res.status(200).json(folders)
 })
@@ -1219,8 +1218,6 @@ async function startWatchers(folders: Folder[], allTables: any) {
 
     const ignoredPathObsidian = store.get('obsidian') || null
     const ignoredPathLogseq = store.get('logseq') || null
-
-    console.log('ignoredPathObsidian', ignoredPathObsidian)
 
     let deletionInProgress = false
     // take the given folderPath array and start watchers on each folder
@@ -1593,8 +1590,6 @@ expressApp.put('/backup/:collection/:timestamp', async (req, res) => {
     if (!isPathComponentValid(collection)) {
         return res.status(400).send('Malformed collection parameter')
     }
-
-    console.log('req.body', req.body, collection)
 
     var dirpath = req.body.backupPath + `/backup/${collection}`
     try {

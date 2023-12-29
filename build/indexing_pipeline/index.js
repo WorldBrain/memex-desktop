@@ -256,7 +256,6 @@ function indexDocument(_a) {
                     _b.label = 16
                 case 16:
                     vectors = embeddedChunk[0].data
-                    console.log('vectors', sourceApplication)
                     documentToIndex = {
                         fullurl: fullUrl,
                         pagetitle: pageTitle,
