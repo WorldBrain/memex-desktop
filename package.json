@@ -1,7 +1,7 @@
 {
   "name": "memex-desktop",
   "productName": "Memex Desktop",
-  "version": "0.0.28",
+  "version": "0.0.30",
   "description": "Backup and sync to your favorite PKM tools",
   "main": "build/index.js",
   "type": "module",
