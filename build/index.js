@@ -497,7 +497,9 @@ app.on('ready', function () {
                     if (!allTables.sourcesDB || !allTables.vectorDocsTable) {
                         return [2 /*return*/]
                     }
-                    // await initializeFileSystemWatchers()
+                    return [4 /*yield*/, initializeFileSystemWatchers()]
+                case 10:
+                    _a.sent()
                     try {
                         startExpress() // Start Express server first
                         log.catchErrors()
@@ -658,6 +660,14 @@ function initializeDatabase() {
             createRSSsourcesTable,
             createWebPagesTable,
             createAnnotationsTable,
+            createPDFTable,
+            createIndexQuery,
+            createIndexQueryForPath,
+            createFoldersTable,
+            createIndexQueryForType,
+            createMarkdownTable,
+            createIndexForMarkdownPath,
+            createIndexForMarkdownFingerPrint,
             vectorDB,
             generateZeroVector,
             defaultVectorDocument,
@@ -768,105 +778,66 @@ function initializeDatabase() {
                         4 /*yield*/,
                         sourcesDB.run(createAnnotationsTable),
                         // create the pdf document table
-                        // let createPDFTable = `CREATE TABLE IF NOT EXISTS pdfTable(
-                        //         id INTEGER PRIMARY KEY,
-                        //         path STRING,
-                        //         fingerPrint STRING,
-                        //         pageTitle STRING,
-                        //         extractedContent STRING,
-                        //         createdWhen INTEGER,
-                        //         sourceApplication STRING,
-                        //         creatorId STRING,
-                        //         metaDataJSON STRING
-                        //         )
-                        //         `
-                        // await sourcesDB.run(createPDFTable)
-                        // let createIndexQuery = `CREATE INDEX IF NOT EXISTS idx_pdfTable_fingerPrint ON pdfTable(fingerPrint)`
-                        // await sourcesDB.run(createIndexQuery)
-                        // let createIndexQueryForPath = `CREATE INDEX IF NOT EXISTS idx_pdfTable_path ON pdfTable(path)`
-                        // await sourcesDB.run(createIndexQueryForPath)
-                        // // Create the folders to watch table
-                        // let createFoldersTable = `CREATE TABLE IF NOT EXISTS watchedFoldersTable(
-                        //     id INTEGER PRIMARY KEY,
-                        //     path STRING,
-                        //     type STRING
-                        //     metaDataJSON STRING
-                        //     )
-                        // `
-                        // let createIndexQueryForType = `CREATE INDEX IF NOT EXISTS idx_watchedFoldersTable_type ON watchedFoldersTable(type)`
-                        // await sourcesDB.run(createIndexQueryForType)
-                        // await sourcesDB.run(createFoldersTable)
-                        // // create the markdown table
-                        // let createMarkdownTable = `CREATE TABLE IF NOT EXISTS markdownDocsTable(
-                        //     id INTEGER PRIMARY KEY,
-                        //     path STRING,
-                        //     fingerPrint STRING,
-                        //     pageTitle STRING,
-                        //     content STRING,
-                        //     sourceApplication STRING,
-                        //     createdWhen INTEGER,
-                        //     creatorId STRING,
-                        //     metaDataJSON STRING
-                        //     )
-                        // `
-                        // await sourcesDB.run(createMarkdownTable)
-                        // let createIndexForMarkdownPath = `CREATE INDEX IF NOT EXISTS idx_markdownDocsTable_path ON markdownDocsTable(path)`
-                        // await sourcesDB.run(createIndexForMarkdownPath)
-                        // let createIndexForMarkdownFingerPrint = `CREATE INDEX IF NOT EXISTS idx_markdownDocsTable_fingerPrint ON markdownDocsTable(fingerPrint)`
-                        // await sourcesDB.run(createIndexForMarkdownFingerPrint)
                     ]
                 case 4:
                     _b.sent()
-                    // create the pdf document table
-                    // let createPDFTable = `CREATE TABLE IF NOT EXISTS pdfTable(
-                    //         id INTEGER PRIMARY KEY,
-                    //         path STRING,
-                    //         fingerPrint STRING,
-                    //         pageTitle STRING,
-                    //         extractedContent STRING,
-                    //         createdWhen INTEGER,
-                    //         sourceApplication STRING,
-                    //         creatorId STRING,
-                    //         metaDataJSON STRING
-                    //         )
-                    //         `
-                    // await sourcesDB.run(createPDFTable)
-                    // let createIndexQuery = `CREATE INDEX IF NOT EXISTS idx_pdfTable_fingerPrint ON pdfTable(fingerPrint)`
-                    // await sourcesDB.run(createIndexQuery)
-                    // let createIndexQueryForPath = `CREATE INDEX IF NOT EXISTS idx_pdfTable_path ON pdfTable(path)`
-                    // await sourcesDB.run(createIndexQueryForPath)
-                    // // Create the folders to watch table
-                    // let createFoldersTable = `CREATE TABLE IF NOT EXISTS watchedFoldersTable(
-                    //     id INTEGER PRIMARY KEY,
-                    //     path STRING,
-                    //     type STRING
-                    //     metaDataJSON STRING
-                    //     )
-                    // `
-                    // let createIndexQueryForType = `CREATE INDEX IF NOT EXISTS idx_watchedFoldersTable_type ON watchedFoldersTable(type)`
-                    // await sourcesDB.run(createIndexQueryForType)
-                    // await sourcesDB.run(createFoldersTable)
-                    // // create the markdown table
-                    // let createMarkdownTable = `CREATE TABLE IF NOT EXISTS markdownDocsTable(
-                    //     id INTEGER PRIMARY KEY,
-                    //     path STRING,
-                    //     fingerPrint STRING,
-                    //     pageTitle STRING,
-                    //     content STRING,
-                    //     sourceApplication STRING,
-                    //     createdWhen INTEGER,
-                    //     creatorId STRING,
-                    //     metaDataJSON STRING
-                    //     )
-                    // `
-                    // await sourcesDB.run(createMarkdownTable)
-                    // let createIndexForMarkdownPath = `CREATE INDEX IF NOT EXISTS idx_markdownDocsTable_path ON markdownDocsTable(path)`
-                    // await sourcesDB.run(createIndexForMarkdownPath)
-                    // let createIndexForMarkdownFingerPrint = `CREATE INDEX IF NOT EXISTS idx_markdownDocsTable_fingerPrint ON markdownDocsTable(fingerPrint)`
-                    // await sourcesDB.run(createIndexForMarkdownFingerPrint)
+                    createPDFTable =
+                        'CREATE TABLE IF NOT EXISTS pdfTable(\n            id INTEGER PRIMARY KEY,\n            path STRING,\n            fingerPrint STRING,\n            pageTitle STRING,\n            extractedContent STRING,\n            createdWhen INTEGER,\n            sourceApplication STRING,\n            creatorId STRING,\n            metaDataJSON STRING\n            )\n            '
+                    return [4 /*yield*/, sourcesDB.run(createPDFTable)]
+                case 5:
+                    _b.sent()
+                    createIndexQuery =
+                        'CREATE INDEX IF NOT EXISTS idx_pdfTable_fingerPrint ON pdfTable(fingerPrint)'
+                    return [4 /*yield*/, sourcesDB.run(createIndexQuery)]
+                case 6:
+                    _b.sent()
+                    createIndexQueryForPath =
+                        'CREATE INDEX IF NOT EXISTS idx_pdfTable_path ON pdfTable(path)'
+                    return [
+                        4 /*yield*/,
+                        sourcesDB.run(createIndexQueryForPath),
+                        // Create the folders to watch table
+                    ]
+                case 7:
+                    _b.sent()
+                    createFoldersTable =
+                        'CREATE TABLE IF NOT EXISTS watchedFoldersTable(\n        id INTEGER PRIMARY KEY,\n        path STRING,\n        type STRING\n        metaDataJSON STRING\n        )\n    '
+                    createIndexQueryForType =
+                        'CREATE INDEX IF NOT EXISTS idx_watchedFoldersTable_type ON watchedFoldersTable(type)'
+                    return [4 /*yield*/, sourcesDB.run(createIndexQueryForType)]
+                case 8:
+                    _b.sent()
+                    return [
+                        4 /*yield*/,
+                        sourcesDB.run(createFoldersTable),
+                        // create the markdown table
+                    ]
+                case 9:
+                    _b.sent()
+                    createMarkdownTable =
+                        'CREATE TABLE IF NOT EXISTS markdownDocsTable(\n        id INTEGER PRIMARY KEY,\n        path STRING,\n        fingerPrint STRING,\n        pageTitle STRING,\n        content STRING,\n        sourceApplication STRING,\n        createdWhen INTEGER,\n        creatorId STRING,\n        metaDataJSON STRING\n        )\n    '
+                    return [4 /*yield*/, sourcesDB.run(createMarkdownTable)]
+                case 10:
+                    _b.sent()
+                    createIndexForMarkdownPath =
+                        'CREATE INDEX IF NOT EXISTS idx_markdownDocsTable_path ON markdownDocsTable(path)'
+                    return [
+                        4 /*yield*/,
+                        sourcesDB.run(createIndexForMarkdownPath),
+                    ]
+                case 11:
+                    _b.sent()
+                    createIndexForMarkdownFingerPrint =
+                        'CREATE INDEX IF NOT EXISTS idx_markdownDocsTable_fingerPrint ON markdownDocsTable(fingerPrint)'
+                    return [
+                        4 /*yield*/,
+                        sourcesDB.run(createIndexForMarkdownFingerPrint),
+                    ]
+                case 12:
+                    _b.sent()
                     console.log('SourcesDB initialized at: ', dbPath)
                     return [4 /*yield*/, lancedb.connect(vectorDBuri)]
-                case 5:
+                case 13:
                     vectorDB = _b.sent()
                     generateZeroVector = function (size) {
                         return new Array(size).fill(0)
@@ -882,45 +853,45 @@ function initializeDatabase() {
                         entities: 'null',
                         vector: generateZeroVector(768),
                     }
-                    _b.label = 6
-                case 6:
-                    _b.trys.push([6, 14, , 15])
-                    _b.label = 7
-                case 7:
-                    _b.trys.push([7, 9, , 12])
+                    _b.label = 14
+                case 14:
+                    _b.trys.push([14, 22, , 23])
+                    _b.label = 15
+                case 15:
+                    _b.trys.push([15, 17, , 20])
                     return [
                         4 /*yield*/,
                         vectorDB.openTable(vectorDocsTableName),
                     ]
-                case 8:
+                case 16:
                     vectorDocsTable = _b.sent()
-                    return [3 /*break*/, 12]
-                case 9:
+                    return [3 /*break*/, 20]
+                case 17:
                     _a = _b.sent()
-                    if (!(vectorDocsTable == null)) return [3 /*break*/, 11]
+                    if (!(vectorDocsTable == null)) return [3 /*break*/, 19]
                     return [
                         4 /*yield*/,
                         vectorDB.createTable(vectorDocsTableName, [
                             defaultVectorDocument,
                         ]),
                     ]
-                case 10:
+                case 18:
                     vectorDocsTable = _b.sent()
-                    _b.label = 11
-                case 11:
-                    return [3 /*break*/, 12]
-                case 12:
+                    _b.label = 19
+                case 19:
+                    return [3 /*break*/, 20]
+                case 20:
                     return [4 /*yield*/, vectorDocsTable.countRows()]
-                case 13:
+                case 21:
                     if (_b.sent() === 0) {
                         vectorDocsTable.add([defaultVectorDocument])
                     }
-                    return [3 /*break*/, 15]
-                case 14:
+                    return [3 /*break*/, 23]
+                case 22:
                     error_1 = _b.sent()
                     console.log('error', error_1)
-                    return [3 /*break*/, 15]
-                case 15:
+                    return [3 /*break*/, 23]
+                case 23:
                     allTables = {
                         sourcesDB: sourcesDB,
                         vectorDocsTable: vectorDocsTable,

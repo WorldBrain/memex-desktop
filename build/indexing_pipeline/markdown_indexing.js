@@ -372,18 +372,52 @@ function processMarkdown(
 export { processMarkdown }
 export function chunkMarkdown(markdown) {
     return __awaiter(this, void 0, void 0, function () {
-        var chunks, chunkedMarkdown, lastHeadline
+        var endIndex, chunks, chunkedMarkdown, lastHeadline
         return __generator(this, function (_a) {
-            chunks = markdown.split('\n\n')
+            // chunk it up by using any double \n as the delimiter, except when the previous item was a headline, then include it
+            // also include the last headline in every chunk until a new headline is found
+            // Check if the first line of the document has a "---"
+            if (markdown.startsWith('---')) {
+                endIndex = markdown.indexOf('\n---', 4)
+                if (endIndex !== -1) {
+                    // Delete everything in between, including the "---" delimiters
+                    markdown = markdown.slice(endIndex + 4)
+                }
+            }
+            // Replace all lines that are only "---" with "\n"
+            markdown = markdown.replace(/^---$/gm, '\n')
+            markdown = markdown
+                .split('\n')
+                .filter(function (line) {
+                    return !/^[^a-zA-Z0-9]+$/.test(line)
+                })
+                .join('\n')
+            console.log('markdown', markdown)
+            chunks = markdown.split('\n')
             chunkedMarkdown = []
             lastHeadline = ''
             chunks.forEach(function (chunk) {
+                if (chunk === '\n' || chunk === '') {
+                    return
+                }
+                if (/^[^a-zA-Z0-9]+$/.test(chunk)) {
+                    return
+                }
                 if (chunk.startsWith('#')) {
                     lastHeadline = chunk
                 }
+                if (lastHeadline.length > 0 && !chunk.startsWith('#')) {
+                    chunkedMarkdown.push(lastHeadline + '\n' + chunk)
+                    lastHeadline = ''
+                } else if (
+                    lastHeadline.length === 0 &&
+                    !chunk.startsWith('#')
+                ) {
+                    chunkedMarkdown.push(chunk)
+                }
                 // Clean the chunk by converting markdown to text
-                chunkedMarkdown.push(lastHeadline + '\n' + chunk)
             })
+            console.log('chunkedMarkdown', chunkedMarkdown)
             return [2 /*return*/, chunkedMarkdown]
         })
     })

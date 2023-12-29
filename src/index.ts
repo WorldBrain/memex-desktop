@@ -358,7 +358,7 @@ app.on('ready', async () => {
     if (!allTables.sourcesDB || !allTables.vectorDocsTable) {
         return
     }
-    // await initializeFileSystemWatchers()
+    await initializeFileSystemWatchers()
     try {
         startExpress() // Start Express server first
 
@@ -544,59 +544,59 @@ async function initializeDatabase() {
 
     // create the pdf document table
 
-    // let createPDFTable = `CREATE TABLE IF NOT EXISTS pdfTable(
-    //         id INTEGER PRIMARY KEY,
-    //         path STRING,
-    //         fingerPrint STRING,
-    //         pageTitle STRING,
-    //         extractedContent STRING,
-    //         createdWhen INTEGER,
-    //         sourceApplication STRING,
-    //         creatorId STRING,
-    //         metaDataJSON STRING
-    //         )
-    //         `
-    // await sourcesDB.run(createPDFTable)
-    // let createIndexQuery = `CREATE INDEX IF NOT EXISTS idx_pdfTable_fingerPrint ON pdfTable(fingerPrint)`
-    // await sourcesDB.run(createIndexQuery)
+    let createPDFTable = `CREATE TABLE IF NOT EXISTS pdfTable(
+            id INTEGER PRIMARY KEY,
+            path STRING,
+            fingerPrint STRING,
+            pageTitle STRING,
+            extractedContent STRING,
+            createdWhen INTEGER,
+            sourceApplication STRING,
+            creatorId STRING,
+            metaDataJSON STRING
+            )
+            `
+    await sourcesDB.run(createPDFTable)
+    let createIndexQuery = `CREATE INDEX IF NOT EXISTS idx_pdfTable_fingerPrint ON pdfTable(fingerPrint)`
+    await sourcesDB.run(createIndexQuery)
 
-    // let createIndexQueryForPath = `CREATE INDEX IF NOT EXISTS idx_pdfTable_path ON pdfTable(path)`
-    // await sourcesDB.run(createIndexQueryForPath)
+    let createIndexQueryForPath = `CREATE INDEX IF NOT EXISTS idx_pdfTable_path ON pdfTable(path)`
+    await sourcesDB.run(createIndexQueryForPath)
 
-    // // Create the folders to watch table
+    // Create the folders to watch table
 
-    // let createFoldersTable = `CREATE TABLE IF NOT EXISTS watchedFoldersTable(
-    //     id INTEGER PRIMARY KEY,
-    //     path STRING,
-    //     type STRING
-    //     metaDataJSON STRING
-    //     )
-    // `
-    // let createIndexQueryForType = `CREATE INDEX IF NOT EXISTS idx_watchedFoldersTable_type ON watchedFoldersTable(type)`
-    // await sourcesDB.run(createIndexQueryForType)
+    let createFoldersTable = `CREATE TABLE IF NOT EXISTS watchedFoldersTable(
+        id INTEGER PRIMARY KEY,
+        path STRING,
+        type STRING
+        metaDataJSON STRING
+        )
+    `
+    let createIndexQueryForType = `CREATE INDEX IF NOT EXISTS idx_watchedFoldersTable_type ON watchedFoldersTable(type)`
+    await sourcesDB.run(createIndexQueryForType)
 
-    // await sourcesDB.run(createFoldersTable)
+    await sourcesDB.run(createFoldersTable)
 
-    // // create the markdown table
-    // let createMarkdownTable = `CREATE TABLE IF NOT EXISTS markdownDocsTable(
-    //     id INTEGER PRIMARY KEY,
-    //     path STRING,
-    //     fingerPrint STRING,
-    //     pageTitle STRING,
-    //     content STRING,
-    //     sourceApplication STRING,
-    //     createdWhen INTEGER,
-    //     creatorId STRING,
-    //     metaDataJSON STRING
-    //     )
-    // `
+    // create the markdown table
+    let createMarkdownTable = `CREATE TABLE IF NOT EXISTS markdownDocsTable(
+        id INTEGER PRIMARY KEY,
+        path STRING,
+        fingerPrint STRING,
+        pageTitle STRING,
+        content STRING,
+        sourceApplication STRING,
+        createdWhen INTEGER,
+        creatorId STRING,
+        metaDataJSON STRING
+        )
+    `
 
-    // await sourcesDB.run(createMarkdownTable)
-    // let createIndexForMarkdownPath = `CREATE INDEX IF NOT EXISTS idx_markdownDocsTable_path ON markdownDocsTable(path)`
-    // await sourcesDB.run(createIndexForMarkdownPath)
+    await sourcesDB.run(createMarkdownTable)
+    let createIndexForMarkdownPath = `CREATE INDEX IF NOT EXISTS idx_markdownDocsTable_path ON markdownDocsTable(path)`
+    await sourcesDB.run(createIndexForMarkdownPath)
 
-    // let createIndexForMarkdownFingerPrint = `CREATE INDEX IF NOT EXISTS idx_markdownDocsTable_fingerPrint ON markdownDocsTable(fingerPrint)`
-    // await sourcesDB.run(createIndexForMarkdownFingerPrint)
+    let createIndexForMarkdownFingerPrint = `CREATE INDEX IF NOT EXISTS idx_markdownDocsTable_fingerPrint ON markdownDocsTable(fingerPrint)`
+    await sourcesDB.run(createIndexForMarkdownFingerPrint)
 
     console.log('SourcesDB initialized at: ', dbPath)
     let vectorDB = await lancedb.connect(vectorDBuri)
