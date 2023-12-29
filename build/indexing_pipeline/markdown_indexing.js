@@ -392,7 +392,6 @@ export function chunkMarkdown(markdown) {
                     return !/^[^a-zA-Z0-9]+$/.test(line)
                 })
                 .join('\n')
-            console.log('markdown', markdown)
             chunks = markdown.split('\n')
             chunkedMarkdown = []
             lastHeadline = ''
@@ -417,7 +416,6 @@ export function chunkMarkdown(markdown) {
                 }
                 // Clean the chunk by converting markdown to text
             })
-            console.log('chunkedMarkdown', chunkedMarkdown)
             return [2 /*return*/, chunkedMarkdown]
         })
     })

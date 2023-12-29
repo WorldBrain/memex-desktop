@@ -25,6 +25,7 @@ import electron, {
     Menu,
     nativeImage,
     dialog,
+    ipcMain,
     Notification,
 } from 'electron'
 import url from 'url'
@@ -58,6 +59,10 @@ if (isPackaged) {
 }
 let expressApp: express.Express = express()
 expressApp.use(cors({ origin: '*' }))
+
+ipcMain.handle('get-db-path', () => {
+    return path.join(app.getPath('userData'))
+})
 
 ////////////////////////////////
 /// DATATBASE SETUP STUFF ///
@@ -271,7 +276,7 @@ async function createWindow() {
             height: 600,
             width: 800,
             webPreferences: {
-                preload: path.join(__dirname, 'preload.js'),
+                preload: path.join(__dirname, 'preload.cjs'),
                 nodeIntegration: true,
             },
         })
@@ -504,6 +509,7 @@ async function initializeDatabase() {
         }
         dbPath = '../MemexDesktopData/sourcesDB.db'
     }
+
     sourcesDB = await AsyncDatabase.open(dbPath)
 
     // create Tables

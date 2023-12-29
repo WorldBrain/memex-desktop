@@ -173,6 +173,7 @@ import electron, {
     Menu,
     nativeImage,
     dialog,
+    ipcMain,
     Notification,
 } from 'electron'
 import url from 'url'
@@ -202,6 +203,9 @@ if (isPackaged) {
 }
 var expressApp = express()
 expressApp.use(cors({ origin: '*' }))
+ipcMain.handle('get-db-path', function () {
+    return path.join(app.getPath('userData'))
+})
 ////////////////////////////////
 /// DATATBASE SETUP STUFF ///
 ////////////////////////////////
@@ -375,7 +379,7 @@ function createWindow() {
                         height: 600,
                         width: 800,
                         webPreferences: {
-                            preload: path.join(__dirname, 'preload.js'),
+                            preload: path.join(__dirname, 'preload.cjs'),
                             nodeIntegration: true,
                         },
                     })

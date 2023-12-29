@@ -23,5 +23,26 @@
 
         <h1>The desktop app is now connected</h1>
         <p>You can close this window and return to the Memex sidebar</p>
+        <p class="warning">
+            Important: Your index is all stored locally, please make sure to
+            back it up. <br />
+            <strong>Folder to back up:</strong> <span id="dbPath"> </span>
+        </p>
+        <script>
+            window.electron.ipcRenderer
+                .getDbPath()
+                .then((path) => {
+                    console.log('path', path)
+                    const dbPathElement = document.getElementById('dbPath')
+                    if (dbPathElement) {
+                        dbPathElement.textContent = path
+                    } else {
+                        console.error('Element with id "dbPath" not found')
+                    }
+                })
+                .catch((error) => {
+                    console.error('Error getting dbPath:', error)
+                })
+        </script>
     </body>
 </html>
