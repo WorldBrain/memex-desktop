@@ -280,7 +280,7 @@ async function createWindow() {
         if (isPackaged) {
             indexPath = path.join(
                 electron.app.getAppPath(),
-                'build',
+                'src',
                 'loading.html',
             )
         } else {
@@ -333,13 +333,11 @@ app.on('ready', async () => {
         embedTextFunction = await initializeModels()
         mainWindow.loadURL(
             url.format({
-                pathname: isPackaged
-                    ? path.join(
-                          electron.app.getAppPath(),
-                          'build',
-                          'index.html',
-                      )
-                    : path.join(electron.app.getAppPath(), 'src', 'index.html'),
+                pathname: path.join(
+                    electron.app.getAppPath(),
+                    'src',
+                    'index.html',
+                ),
                 protocol: 'file:',
                 slashes: true,
             }),

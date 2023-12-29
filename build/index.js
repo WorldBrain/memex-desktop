@@ -383,7 +383,7 @@ function createWindow() {
                     if (isPackaged) {
                         indexPath = path.join(
                             electron.app.getAppPath(),
-                            'src',
+                            'build',
                             'loading.html',
                         )
                     } else {
@@ -460,11 +460,17 @@ app.on('ready', function () {
                     embedTextFunction = _a.sent()
                     mainWindow.loadURL(
                         url.format({
-                            pathname: path.join(
-                                electron.app.getAppPath(),
-                                'src',
-                                'index.html',
-                            ),
+                            pathname: isPackaged
+                                ? path.join(
+                                      electron.app.getAppPath(),
+                                      'build',
+                                      'index.html',
+                                  )
+                                : path.join(
+                                      electron.app.getAppPath(),
+                                      'src',
+                                      'index.html',
+                                  ),
                             protocol: 'file:',
                             slashes: true,
                         }),
@@ -1611,22 +1617,63 @@ expressApp.get('/get_all_rss_sources', function (req, res) {
         })
     })
 })
-expressApp.put('/remove_feed_source', function (req, res) {
+expressApp.post('/remove_feed_source', function (req, res) {
     return __awaiter(this, void 0, void 0, function () {
+        var feedUrl, error_7
         return __generator(this, function (_a) {
-            if (!checkSyncKey(req.body.syncKey)) {
-                return [
-                    2 /*return*/,
-                    res.status(403).send('Only one app instance allowed'),
-                ]
+            switch (_a.label) {
+                case 0:
+                    if (!checkSyncKey(req.body.syncKey)) {
+                        return [
+                            2 /*return*/,
+                            res
+                                .status(403)
+                                .send('Only one app instance allowed'),
+                        ]
+                    }
+                    _a.label = 1
+                case 1:
+                    _a.trys.push([1, 3, , 4])
+                    feedUrl = req.body.feedUrl
+                    return [
+                        4 /*yield*/,
+                        sourcesDB === null || sourcesDB === void 0
+                            ? void 0
+                            : sourcesDB.run(
+                                  'DELETE FROM rssSourcesTable WHERE feedUrl = ?',
+                                  [feedUrl],
+                              ),
+                    ]
+                case 2:
+                    _a.sent()
+                    return [
+                        2 /*return*/,
+                        res
+                            .status(200)
+                            .send('Feed source removed successfully'),
+                    ]
+                case 3:
+                    error_7 = _a.sent()
+                    log.error(
+                        'Error removing '.concat(
+                            req.body.feedUrl,
+                            ' in /remove_feed_source',
+                        ),
+                        error_7,
+                    )
+                    return [
+                        2 /*return*/,
+                        res.status(500).json({ error: error_7 }),
+                    ]
+                case 4:
+                    return [2 /*return*/]
             }
-            return [2 /*return*/]
         })
     })
 })
 expressApp.post('/open_file', function (req, res) {
     return __awaiter(this, void 0, void 0, function () {
-        var path, error_7
+        var path, error_8
         return __generator(this, function (_a) {
             switch (_a.label) {
                 case 0:
@@ -1654,7 +1701,7 @@ expressApp.post('/open_file', function (req, res) {
                         res.status(200).send('File opened successfully'),
                     ]
                 case 3:
-                    error_7 = _a.sent()
+                    error_8 = _a.sent()
                     return [
                         2 /*return*/,
                         res.status(500).send('Error opening file'),
@@ -1928,7 +1975,7 @@ function startWatchers(folders, allTables) {
                                               var retryCount,
                                                   maxRetries,
                                                   waitForDeletion,
-                                                  error_8
+                                                  error_9
                                               var _this = this
                                               return __generator(
                                                   this,
@@ -1997,11 +2044,11 @@ function startWatchers(folders, allTables) {
                                                                   4,
                                                               ]
                                                           case 3:
-                                                              error_8 =
+                                                              error_9 =
                                                                   _a.sent()
                                                               // Handle error if max retries reached
                                                               console.error(
-                                                                  error_8,
+                                                                  error_9,
                                                               )
                                                               return [
                                                                   3 /*break*/,
