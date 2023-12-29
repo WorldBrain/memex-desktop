@@ -280,10 +280,6 @@ function findSimilar(
                                                     path = _a.sent()
                                                     _a.label = 6
                                                 case 6:
-                                                    console.log(
-                                                        'item',
-                                                        item.sourceapplication,
-                                                    )
                                                     return [
                                                         2 /*return*/,
                                                         {

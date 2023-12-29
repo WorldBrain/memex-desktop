@@ -1339,7 +1339,6 @@ expressApp.post('/load_feed_sources', function (req, res) {
                             type: source.type,
                         }
                     })
-                    console.log('feedSources', feedSourcesOutput)
                     return [
                         2 /*return*/,
                         res.status(200).send(feedSourcesOutput),
@@ -1389,13 +1388,11 @@ expressApp.post('/add_feed_source', function (req, res) {
                         ]
                     }
                     feedSources = req.body.feedSources
-                    console.log('feedSources', req.body)
                     feedSourceQueue = __spreadArray(
                         __spreadArray([], feedSourceQueue, true),
                         feedSources,
                         true,
                     )
-                    console.log('feedSourceQueue', feedSourceQueue)
                     _e.label = 1
                 case 1:
                     _e.trys.push([1, 10, , 11])
@@ -1513,7 +1510,6 @@ expressApp.post('/add_feed_source', function (req, res) {
                     ;(feedUrl = feedSource.feedUrl),
                         (feedTitle = feedSource.feedTitle),
                         (type = feedSource.type)
-                    console.log('Start indexing', feedUrl)
                     return [
                         4 /*yield*/,
                         addFeedSource(
@@ -1716,7 +1712,6 @@ expressApp.post('/fetch_all_folders', function (req, res) {
                     ]
                 case 1:
                     folders = _a.sent()
-                    console.log('folders', folders)
                     return [2 /*return*/, res.status(200).json(folders)]
             }
         })
@@ -1923,7 +1918,6 @@ function startWatchers(folders, allTables) {
                 case 2:
                     ignoredPathObsidian = store.get('obsidian') || null
                     ignoredPathLogseq = store.get('logseq') || null
-                    console.log('ignoredPathObsidian', ignoredPathObsidian)
                     deletionInProgress = false
                     // take the given folderPath array and start watchers on each folder
                     ;(folders === null || folders === void 0
@@ -2600,7 +2594,6 @@ expressApp.put('/backup/:collection/:timestamp', function (req, res) {
                     res.status(400).send('Malformed collection parameter'),
                 ]
             }
-            console.log('req.body', req.body, collection)
             dirpath = req.body.backupPath + '/backup/'.concat(collection)
             try {
                 fs.mkdirSync(dirpath, { recursive: true })

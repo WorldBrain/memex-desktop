@@ -298,7 +298,6 @@ function addFeedSource(
                                         'https://substackcdn.com',
                                     )
                                 ) {
-                                    console.log('isSubstack')
                                     isSubstack_1 = true
                                 }
                             }
@@ -310,7 +309,6 @@ function addFeedSource(
                     _e.label = 10
                 case 10:
                     if (!isSubstack_1) return [3 /*break*/, 21]
-                    console.log('Substack feed detected')
                     links_2 = []
                     url = new URL(feedUrl)
                     feedUrlSubstack = ''

@@ -286,7 +286,6 @@ function processMarkdown(
                     return [4 /*yield*/, chunkMarkdown(markdown)]
                 case 12:
                     chunkedMarkdown = _b.sent()
-                    console.log('sourceApplication', sourceApplication)
                     return [
                         4 /*yield*/,
                         indexDocument({
