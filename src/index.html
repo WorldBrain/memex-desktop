@@ -32,7 +32,6 @@
             window.electron.ipcRenderer
                 .getDbPath()
                 .then((path) => {
-                    console.log('path', path)
                     const dbPathElement = document.getElementById('dbPath')
                     if (dbPathElement) {
                         dbPathElement.textContent = path

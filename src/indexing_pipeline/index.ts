@@ -81,8 +81,6 @@ async function indexDocument({
                 }
                 const vectors = embeddedChunk[0].data
 
-                console.log('vectors', sourceApplication)
-
                 var documentToIndex = {
                     fullurl: fullUrl,
                     pagetitle: pageTitle,

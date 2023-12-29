@@ -100,7 +100,6 @@ async function addFeedSource(
                             imageUrl &&
                             imageUrl.startsWith('https://substackcdn.com')
                         ) {
-                            console.log('isSubstack')
                             isSubstack = true
                         }
                     }
@@ -112,7 +111,6 @@ async function addFeedSource(
         }
 
         if (isSubstack) {
-            console.log('Substack feed detected')
             let links: string[] = []
 
             const url = new URL(feedUrl)

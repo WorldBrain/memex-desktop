@@ -930,7 +930,6 @@ expressApp.post('/load_feed_sources', async function (req, res) {
             type: source.type,
         }))
 
-        console.log('feedSources', feedSourcesOutput)
         return res.status(200).send(feedSourcesOutput)
     } catch (error) {
         console.log(`Error loading feed sources in /load_feed_sources`, error)
@@ -953,10 +952,8 @@ expressApp.post('/add_feed_source', async function (req, res) {
         return res.status(403).send('Only one app instance allowed')
     }
     const feedSources = req.body.feedSources
-    console.log('feedSources', req.body)
     feedSourceQueue = [...feedSourceQueue, ...feedSources]
 
-    console.log('feedSourceQueue', feedSourceQueue)
     // logic for how RSS feed is added to the database
     try {
         for (let i = 0; i < feedSources.length; i++) {
@@ -1002,8 +999,6 @@ expressApp.post('/add_feed_source', async function (req, res) {
 
         for (const feedSource of feedSourceQueue) {
             const { feedUrl, feedTitle, type } = feedSource
-
-            console.log('Start indexing', feedUrl)
 
             await addFeedSource(
                 feedUrl,
@@ -1094,8 +1089,6 @@ expressApp.post('/fetch_all_folders', async function (req, res) {
             console.log(rows)
         },
     )
-
-    console.log('folders', folders)
 
     return res.status(200).json(folders)
 })
@@ -1225,8 +1218,6 @@ async function startWatchers(folders: Folder[], allTables: any) {
 
     const ignoredPathObsidian = store.get('obsidian') || null
     const ignoredPathLogseq = store.get('logseq') || null
-
-    console.log('ignoredPathObsidian', ignoredPathObsidian)
 
     let deletionInProgress = false
     // take the given folderPath array and start watchers on each folder
@@ -1599,8 +1590,6 @@ expressApp.put('/backup/:collection/:timestamp', async (req, res) => {
     if (!isPathComponentValid(collection)) {
         return res.status(400).send('Malformed collection parameter')
     }
-
-    console.log('req.body', req.body, collection)
 
     var dirpath = req.body.backupPath + `/backup/${collection}`
     try {

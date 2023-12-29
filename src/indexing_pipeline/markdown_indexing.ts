@@ -101,8 +101,6 @@ async function processMarkdown(
         }
         const chunkedMarkdown = await chunkMarkdown(markdown)
 
-        console.log('sourceApplication', sourceApplication)
-
         await indexDocument({
             fullUrl: fingerPrint,
             pageTitle: title,
