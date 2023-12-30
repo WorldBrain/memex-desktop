@@ -352,7 +352,7 @@ app.on('ready', function () { return __awaiter(void 0, void 0, void 0, function 
                 try {
                     startExpress(); // Start Express server first
                     log.catchErrors();
-                    trayIconPath = null;
+                    trayIconPath = '';
                     if (isPackaged) {
                         trayIconPath = path.join(process.resourcesPath, 'src/img/tray_icon.png');
                     }
@@ -934,6 +934,7 @@ expressApp.post('/add_feed_source', function (req, res) {
                     }
                     feedSources = req.body.feedSources;
                     feedSourceQueue = __spreadArray(__spreadArray([], feedSourceQueue, true), feedSources, true);
+                    console.log('feedSourceQueue', feedSourceQueue, req.body);
                     _e.label = 1;
                 case 1:
                     _e.trys.push([1, 10, , 11]);
