@@ -20,6 +20,7 @@ jobs:
               uses: actions/setup-node@v1
               with:
                   node-version: 18
+
             - name: yarn install
               run: yarn install
 
@@ -28,9 +29,9 @@ jobs:
 
             - name: Copy necessary files to build directory
               run: |
-                  cp src/preload.cjs build/
-                  cp src/*.html build/
-                  cp src/*.css build/
+                  cp src/preload.cjs build
+                  cp src/*.html build
+                  cp src/*.css build
 
             - name: Prepare for app notarization
               if: startsWith(matrix.os, 'macos')
