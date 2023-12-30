@@ -26,9 +26,7 @@ jobs:
 
             - name: tsc
               uses: icrawl/action-tsc@v1
-
-            - name: Create build directory
-              run: mkdir -p build
+              run: yarn tsc
 
             - name: Copy necessary files to build directory
               run: |
