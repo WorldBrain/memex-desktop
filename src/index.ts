@@ -368,7 +368,7 @@ app.on('ready', async () => {
         startExpress() // Start Express server first
 
         log.catchErrors()
-        let trayIconPath = null
+        let trayIconPath = ''
         if (isPackaged) {
             trayIconPath = path.join(
                 process.resourcesPath,
