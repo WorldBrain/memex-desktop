@@ -25,7 +25,6 @@ jobs:
               run: yarn install
 
             - name: tsc
-              uses: icrawl/action-tsc@v1
               run: yarn tsc
 
             - name: Copy necessary files to build directory
