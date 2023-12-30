@@ -21,18 +21,6 @@ jobs:
               with:
                   node-version: 18
 
-            - name: Install TypeScript
-              run: npm install -g typescript
-
-            - name: TypeScript Compile
-              run: tsc
-
-            - name: Copy necessary files to build directory
-              run: |
-                  cp src/preload.cjs build/
-                  cp src/*.html build/
-                  cp src/*.css build/
-
             - name: Prepare for app notarization
               if: startsWith(matrix.os, 'macos')
               # Import Apple API key for app notarization on macOS
