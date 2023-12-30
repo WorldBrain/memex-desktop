@@ -47,6 +47,7 @@ import { Server } from 'http'
 dotEnv.config()
 
 const isPackaged = app.isPackaged
+let updateStage: 'pristine' | 'checking' | 'downloading' | string = 'pristine'
 let tray: Tray | null = null
 let mainWindow: BrowserWindow
 let downloadProgress: number = 0
@@ -392,6 +393,15 @@ app.on('ready', async () => {
         tray = new Tray(trayIcon)
         tray.setImage(trayIcon)
 
+        let updateLabel = 'Check for Updates'
+
+        if (updateStage === 'checking') {
+            updateLabel = 'Checking for Updates'
+        }
+        if (updateStage === 'downloading') {
+            updateLabel = 'Update Downloading'
+        }
+
         var updateMenuItem = {
             label: 'Check for Updates',
             click: function () {
@@ -419,12 +429,6 @@ app.on('ready', async () => {
                     store.delete('syncKey')
                 },
             },
-            {
-                label: 'Add Local folder',
-                click: async function () {
-                    await watchNewFolder()
-                },
-            },
             updateMenuItem,
             {
                 label: 'Exit',
@@ -444,12 +448,15 @@ app.on('ready', async () => {
         try {
             autoUpdater
                 .checkForUpdates()
-                .then(function () {})
+                .then(function () {
+                    updateStage = 'checking'
+                })
                 .catch(function (err) {
                     log.error('err', err)
                 })
             autoUpdater.on('update-available', async function () {
                 log.info('update available')
+                updateStage = 'downloading'
                 log.info(autoUpdater.downloadUpdate())
             })
 
