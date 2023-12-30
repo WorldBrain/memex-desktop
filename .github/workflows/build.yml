@@ -21,9 +21,6 @@ jobs:
               with:
                   node-version: 18
 
-            - name: yarn install
-              run: yarn install
-
             - name: tsc
               run: yarn tsc
 
