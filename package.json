@@ -1,7 +1,7 @@
 {
   "name": "memex-desktop",
   "productName": "Memex Desktop",
-  "version": "0.0.41",
+  "version": "0.0.42",
   "description": "Backup and sync to your favorite PKM tools",
   "main": "build/index.js",
   "type": "module",
@@ -21,6 +21,7 @@
     "publish": "electron-forge publish",
     "lint": "eslint --ext .ts,.tsx .",
     "deploy": "tsc && electron-builder build --mac --linux --win --publish never",
+    "build": "tsc",
     "build:manual": "tsc && cp src/preload.cjs build/ && cp src/*.html build &&  cp src/*.css build/ &&  electron-builder build -mwl --publish never",
     "build:mac:x64": "tsc && cp src/preload.cjs build/ && cp src/*.html build &&  cp src/*.css build/ &&  electron-builder build --mac dmg zip --x64",
     "build:mac:arm64:dmg": "tsc && cp src/preload.cjs build/ && cp src/*.html build &&  cp src/*.css build/ &&  electron-builder build --mac dmg --arm64",
@@ -188,7 +189,7 @@
     "sqlite3": "^5.1.6",
     "stopwords-iso": "^1.1.0",
     "turndown": "^7.1.2",
-    "vectordb": "^0.3.11",
+    "vectordb": "^0.4.2",
     "wink-pos-tagger": "^2.2.2",
     "xml2js": "^0.6.2"
   }
