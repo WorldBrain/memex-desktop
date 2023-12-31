@@ -4,6 +4,7 @@ import { findSimilar } from './search/find_similar.js'
 import {
     addFeedSource,
     getAllRSSSources,
+    runFeedFetchCron,
 } from './indexing_pipeline/rssFeeds/index.js'
 
 ////////////////////////////////
@@ -12,7 +13,7 @@ import {
 
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
-import { shell } from 'electron'
+import { shell, powerMonitor } from 'electron'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -364,6 +365,7 @@ app.on('ready', async () => {
     if (!allTables.sourcesDB || !allTables.vectorDocsTable) {
         return
     }
+    await initializeRSSCronJobs()
     await initializeFileSystemWatchers()
     try {
         startExpress() // Start Express server first
@@ -472,6 +474,25 @@ app.on('ready', async () => {
         app.quit()
     }
 })
+
+async function initializeRSSCronJobs() {
+    await runFeedFetchCron(allTables, embedTextFunction)
+
+    let lastRun = Date.now()
+
+    setInterval(async () => {
+        const idleTime = powerMonitor.getSystemIdleTime()
+        const oneDayPassed = Date.now() - lastRun >= 24 * 60 * 60 * 1000
+
+        if (idleTime > 5 * 60 && oneDayPassed) {
+            // 5 minutes of inactivity and 24 hours since the last run
+            await runFeedFetchCron(allTables, embedTextFunction)
+            lastRun = Date.now() // Update the last run time
+            log.log('RSS feed fetch cron job ran')
+            console.log('RSS feed fetch cron job ran')
+        }
+    }, 60 * 2000) // Check every 2 minutes
+}
 
 async function generateEmbeddingFromText(text2embed: string) {
     return await generateEmbeddings(text2embed, {
@@ -686,6 +707,10 @@ async function initializeFileSystemWatchers() {
         startWatchers(folders, allTables)
     }
 }
+
+///////////////////////////
+/// RSS FEED REGULAR FETCH  ///
+/////////////////////////
 
 async function initializeModels() {
     let { pipeline, env } = await import('@xenova/transformers')
@@ -1013,6 +1038,7 @@ expressApp.post('/add_feed_source', async function (req, res) {
                 allTables,
                 type,
                 entityExtractionFunction,
+                0, // take the entire history
             )
 
             // if (success) {
@@ -1031,7 +1057,6 @@ expressApp.get('/get_all_rss_sources', async function (req, res) {
     if (!checkSyncKey(req.body.syncKey)) {
         return res.status(403).send('Only one app instance allowed')
     }
-    // logic for how RSS feed is added to the database, and the cron job is set up
 
     try {
         const rssSources = await getAllRSSSources(allTables)
