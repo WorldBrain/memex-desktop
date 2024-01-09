@@ -1168,7 +1168,7 @@ async function watchNewFolder() {
         sourceApplication = 'obsidian'
     } else if (fs.existsSync(logseqFolder)) {
         sourceApplication = 'logseq'
-        newFolder = newFolder + '/pages'
+        newFolder = newFolder
     }
 
     // check if the folder is already saved
