@@ -676,7 +676,7 @@ async function initializeFileSystemWatchers() {
                 folder.sourceApplication = 'obsidian'
             } else if (fs.existsSync(logseqFolder)) {
                 folder.sourceApplication = 'logseq'
-                folder.path = logseqFolder + '/pages'
+                folder.path = folder?.path + '/pages'
             } else {
                 folder.sourceApplication = 'local'
             }
@@ -1168,7 +1168,7 @@ async function watchNewFolder() {
         sourceApplication = 'obsidian'
     } else if (fs.existsSync(logseqFolder)) {
         sourceApplication = 'logseq'
-        newFolder = logseqFolder + '/pages'
+        newFolder = newFolder + '/pages'
     }
 
     // check if the folder is already saved
@@ -1225,7 +1225,6 @@ async function startWatchers(folders: Folder[], allTables: any) {
     }
 
     const ignoredPathObsidian = store.get('obsidian') || null
-    const ignoredPathLogseq = store.get('logseq') || null
 
     let deletionInProgress = false
     // take the given folderPath array and start watchers on each folder
@@ -1235,7 +1234,6 @@ async function startWatchers(folders: Folder[], allTables: any) {
                 ignored: [
                     /(^|[\/\\])\../, // ignore dotfiles
                     ignoredPathObsidian as string,
-                    ignoredPathLogseq as string,
                 ],
                 persistent: true,
             })

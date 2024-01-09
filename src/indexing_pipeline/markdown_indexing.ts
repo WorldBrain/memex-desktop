@@ -33,6 +33,12 @@ async function processMarkdown(
     // get the markdown text
     const markdown = fs.readFileSync(file, 'utf-8')
 
+    if (sourceApplication === 'logseq') {
+        if (markdown.startsWith('pagetitle::')) {
+            return
+        }
+    }
+
     if (markdown.length === 0 && changeType === 'contentChange') {
         return
     }

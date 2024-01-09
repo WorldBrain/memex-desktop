@@ -74,7 +74,7 @@ async function findSimilar(
                         `SELECT path FROM watchedFoldersTable WHERE sourceApplication = ?`,
                         [item.sourceapplication],
                     )
-                    topLevelFolder = topLevelFolder.path.split('/').pop()
+                    topLevelFolder = topLevelFolder?.path.split('/').pop()
                 }
                 if (item.contenttype === 'pdf') {
                     path = await allTables.sourcesDB.get(
