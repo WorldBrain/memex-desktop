@@ -33,7 +33,7 @@ async function processMarkdown(
     // get the markdown text
     const markdown = fs.readFileSync(file, 'utf-8')
 
-    if (markdown.length === 0) {
+    if (markdown.length === 0 && changeType === 'contentChange') {
         return
     }
 
@@ -58,8 +58,8 @@ async function processMarkdown(
             if (existingFileViaFingerPrint?.path === file) {
                 return
             }
-            // determine if the change is just rename or if its a new file
-            if (existingFileViaFingerPrint) {
+            // determine if the change is just rename or if its a new file, check for markdown length means its a new file
+            if (existingFileViaFingerPrint && markdown.length > 0) {
                 const existingFilePath =
                     existingFileViaFingerPrint.path.substring(
                         0,
@@ -88,7 +88,7 @@ async function processMarkdown(
                         file,
                         fingerPrint,
                         title,
-                        markdown,
+                        markdown ?? '',
                         sourceApplication,
                         createdWhen,
                         '1',
@@ -99,7 +99,16 @@ async function processMarkdown(
         } catch (error) {
             throw error
         }
-        const chunkedMarkdown = await chunkMarkdown(markdown)
+
+        if (markdown.length === 0) {
+            return
+        }
+
+        let chunkedMarkdown = ['']
+
+        if (markdown.length > 0) {
+            chunkedMarkdown = await chunkMarkdown(markdown)
+        }
 
         await indexDocument({
             fullUrl: fingerPrint,
