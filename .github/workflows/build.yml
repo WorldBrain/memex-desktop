@@ -12,8 +12,8 @@ jobs:
             matrix:
                 os:
                     [
-                        macos-latest-xlarge,
                         macos-latest,
+                        macos-latest-xlarge,
                         ubuntu-latest,
                         windows-latest,
                     ]
