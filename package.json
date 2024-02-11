@@ -156,17 +156,8 @@
     "typescript": "^4.8.3"
   },
   "dependencies": {
-    "@extractus/feed-extractor": "^7.0.8",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
-    "@types/remove-markdown": "^0.3.4",
-    "@types/wink-pos-tagger": "^2.2.6",
-    "@types/xml2js": "^0.4.14",
-    "@xenova/transformers": "^2.11.0",
-    "apache-arrow": "^14.0.1",
-    "axios": "^1.6.2",
-    "cheerio": "^1.0.0-rc.12",
-    "chokidar": "^3.5.3",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "electron-builder-notarize": "^1.5.1",
@@ -176,21 +167,9 @@
     "electron-store": "^8.1.0",
     "electron-updater": "^6.1.4",
     "express": "^4.18.2",
-    "jsdom": "^23.0.0",
-    "lancedb": "^0.0.1",
     "mkdirp": "^3.0.1",
     "moment": "^2.29.4",
     "node-fetch": "^2.6.1",
-    "notarytool": "^0.0.4",
-    "openai": "^4.20.0",
-    "pdfjs-dist": "^4.0.269",
-    "promised-sqlite3": "^2.1.0",
-    "remove-markdown": "^0.5.0",
-    "sqlite3": "^5.1.6",
-    "stopwords-iso": "^1.1.0",
-    "turndown": "^7.1.2",
-    "vectordb": "^0.4.2",
-    "wink-pos-tagger": "^2.2.2",
-    "xml2js": "^0.6.2"
+    "notarytool": "^0.0.4"
   }
 }
