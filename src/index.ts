@@ -630,6 +630,7 @@ expressApp.put('/backup/:collection/:timestamp', async (req, res) => {
     if (!checkSyncKey(req.body.syncKey)) {
         return res.status(403).send('Only one app instance allowed')
     }
+
     var filename = req.params.timestamp
     if (!isPathComponentValid(filename)) {
         return res.status(400).send('Malformed timestamp parameter')
@@ -649,11 +650,31 @@ expressApp.put('/backup/:collection/:timestamp', async (req, res) => {
     }
 
     var filepath = dirpath + `/${filename}`
+    console.log('filepath', filepath)
+
+    fs.access(dirpath, fs.constants.W_OK, (err) => {
+        if (err) {
+            console.log('not writeable', err)
+            // Adjust permissions in a cross-platform manner
+            fs.chmod(dirpath, 0o766, (chmodErr) => {
+                // Sets read, write, and execute permissions for the owner, and read/write for group and others
+                if (chmodErr) {
+                    console.error(`Failed to adjust permissions:`, chmodErr)
+                } else {
+                    console.log(`${dirpath} permissions adjusted.`)
+                }
+            })
+        } else {
+            console.log(`${filepath} is writable.`)
+        }
+    })
     fs.writeFile(filepath, JSON.stringify(req.body), function (err) {
         if (err) {
             log.error(err)
+            console.log('err', err)
             return res.status(500).send('Failed to write to file.')
         }
+        console.log('File written successfully')
         res.status(200).send('Data saved successfully.')
     })
 })
